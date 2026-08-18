@@ -1,0 +1,42 @@
+name: Сборка и Релиз
+
+on:
+  push:
+    tags:
+      - 'v*' # Срабатывает, когда вы создаете тег, например "v1.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Скачивание кода
+        uses: actions/checkout@v3
+
+      - name: Настройка Java 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Сборка плагина
+        run: mvn clean package
+
+      - name: Создание GitHub Релиза
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Релиз ${{ github.ref_name }}
+          body: |
+            Автоматическая сборка плагина **WaterWorld** от **dagxam**.
+            
+            🔹 **Что нового:**
+            - Кастомная генерация бесконечного океана.
+            - Дно состоит из камня, сланца и земли (для совместимости с Ore-Plugin).
+            
+            ⬇️ Скачайте готовый `.jar` файл в разделе **Assets** ниже.
+          files: target/WaterWorld-*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
