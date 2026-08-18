@@ -1,9 +1,13 @@
 package com.dagxam.waterworld;
 
 import org.bukkit.Material;
+import org.bukkit.block.Biome;
+import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.generator.WorldInfo;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 
 public class WaterGenerator extends ChunkGenerator {
@@ -38,10 +42,26 @@ public class WaterGenerator extends ChunkGenerator {
             }
         }
     }
+
+    // --- НОВОЕ: Заставляем весь мир быть теплым океаном без льда ---
+    @Override
+    public BiomeProvider getDefaultBiomeProvider(WorldInfo worldInfo) {
+        return new BiomeProvider() {
+            @Override
+            public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
+                return Biome.WARM_OCEAN; 
+            }
+
+            @Override
+            public List<Biome> getBiomes(WorldInfo worldInfo) {
+                return Collections.singletonList(Biome.WARM_OCEAN);
+            }
+        };
+    }
     
     @Override
     public boolean shouldGenerateDecorations() {
-        return true; // Включаем, чтобы Ore-Plugin мог генерировать руды
+        return true; // Оставляем включенным для генерации руд
     }
 
     @Override
