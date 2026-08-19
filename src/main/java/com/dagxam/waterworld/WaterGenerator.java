@@ -40,6 +40,9 @@ public final class WaterGenerator extends ChunkGenerator {
     private final double islandVariation;
     private final double islandNoiseScale;
 
+    private final boolean oresEnabled;
+    private final int oreAttemptsPerChunk;
+
     private long initializedSeed = Long.MIN_VALUE;
     private SimplexOctaveGenerator terrainGen;
     private SimplexOctaveGenerator caveGen;
@@ -68,6 +71,9 @@ public final class WaterGenerator extends ChunkGenerator {
         islandHeight = Math.max(2, config.getInt("island.height", 9));
         islandVariation = config.getDouble("island.variation", 1.6D);
         islandNoiseScale = config.getDouble("island.noise-scale", 0.07D);
+
+        oresEnabled = config.getBoolean("ores.enabled", true);
+        oreAttemptsPerChunk = Math.max(1, config.getInt("ores.attempts-per-chunk", 64));
     }
 
     private synchronized void ensureGenerators(long seed) {
@@ -149,6 +155,184 @@ public final class WaterGenerator extends ChunkGenerator {
 
                 chunkData.setBlock(localX, minHeight, localZ, Material.BEDROCK);
             }
+        }
+
+        // The vanilla generator is disabled for this custom world, so ores
+        // must be generated explicitly. This keeps normal-looking ore veins
+        // both under the ocean and inside the island's stone.
+        if (oresEnabled) {
+            generateOres(worldInfo, random, chunkX, chunkZ, chunkData);
+        }
+    }
+
+    /**
+     * Lightweight vanilla-like ore generation for our custom ChunkGenerator.
+     *
+     * The standard Minecraft ore step cannot run because this generator
+     * deliberately disables vanilla noise/surface generation. We therefore
+     * create deterministic small veins in STONE/DEEPSLATE ourselves.
+     */
+    private void generateOres(
+            WorldInfo worldInfo,
+            Random chunkRandom,
+            int chunkX,
+            int chunkZ,
+            ChunkData data
+    ) {
+        long seed = worldInfo.getSeed()
+                ^ ((long) chunkX * 341873128712L)
+                ^ ((long) chunkZ * 132897987541L)
+                ^ 0x6A09E667F3BCC909L;
+        Random oreRandom = new Random(seed);
+
+        // A few more attempts than the minimum because the custom world has
+        // less stone near the surface than a vanilla Overworld.
+        for (int i = 0; i < oreAttemptsPerChunk; i++) {
+            int x = oreRandom.nextInt(16);
+            int z = oreRandom.nextInt(16);
+            int y = chooseOreY(oreRandom, worldInfo.getMinHeight(), seaLevel);
+
+            OreDefinition ore = chooseOre(oreRandom, y);
+            if (ore == null) {
+                continue;
+            }
+
+            generateVein(data, oreRandom, x, y, z, ore);
+        }
+    }
+
+    private int chooseOreY(Random random, int minHeight, int seaLevel) {
+        // Weighted height selection roughly following the 1.20 Overworld
+        // idea: common ores are spread broadly, rare ores prefer depth.
+        int roll = random.nextInt(100);
+        if (roll < 25) {
+            return randomBetween(random, -16, 96);       // coal / iron / copper
+        }
+        if (roll < 50) {
+            return randomBetween(random, -32, 48);       // iron / copper / gold
+        }
+        if (roll < 72) {
+            return randomBetween(random, -64, 32);       // coal / iron / gold
+        }
+        if (roll < 90) {
+            return randomBetween(random, -64, 16);       // redstone / lapis / diamond
+        }
+        return randomBetween(random, -64, 0);            // rare deep ores
+    }
+
+    private OreDefinition chooseOre(Random random, int y) {
+        /*
+         * Approximate vanilla-style distribution. The exact 1.20 ore engine
+         * is data-driven and cannot be invoked after disabling vanilla noise,
+         * so we keep the same idea: common ores are frequent, rare ores are
+         * genuinely rare and deep ores use deepslate variants.
+         */
+        int roll = random.nextInt(10_000);
+
+        // Emerald is intentionally very rare.
+        if (roll < 8 && y >= -16 && y <= 256) {
+            return new OreDefinition(Material.EMERALD_ORE, 2, -16, 256);
+        }
+
+        if (y <= 16) {
+            if (roll < 1200) return new OreDefinition(Material.DIAMOND_ORE, 3, -64, 16);
+            if (roll < 2500) return new OreDefinition(Material.REDSTONE_ORE, 6, -64, 16);
+            if (roll < 3300) return new OreDefinition(Material.LAPIS_ORE, 6, -64, 64);
+            if (roll < 4300) return new OreDefinition(Material.GOLD_ORE, 6, -64, 32);
+        }
+
+        if (y <= 64) {
+            if (roll < 5000) return new OreDefinition(Material.IRON_ORE, 8, -64, 256);
+            if (roll < 6500) return new OreDefinition(Material.COAL_ORE, 10, 0, 192);
+            if (roll < 7900) return new OreDefinition(Material.COPPER_ORE, 10, 0, 96);
+        } else {
+            // Above Y64, keep the distribution close to normal overworld
+            // surface mining: mostly coal and iron, with copper lower down.
+            if (roll < 6200) return new OreDefinition(Material.COAL_ORE, 10, 0, 192);
+            if (roll < 9000) return new OreDefinition(Material.IRON_ORE, 8, -64, 256);
+            if (roll < 9700 && y <= 96) {
+                return new OreDefinition(Material.COPPER_ORE, 10, 0, 96);
+            }
+        }
+
+        return null;
+    }
+
+    private void generateVein(
+            ChunkData data,
+            Random random,
+            int centerX,
+            int centerY,
+            int centerZ,
+            OreDefinition ore
+    ) {
+        if (centerY < ore.minY || centerY > ore.maxY) {
+            return;
+        }
+
+        int size = Math.max(1, ore.veinSize);
+        int placed = 0;
+
+        for (int i = 0; i < size * 3; i++) {
+            int x = centerX + random.nextInt(5) - 2;
+            int y = centerY + random.nextInt(5) - 2;
+            int z = centerZ + random.nextInt(5) - 2;
+
+            if (x < 0 || x >= 16 || z < 0 || z >= 16) {
+                continue;
+            }
+
+            if (y < ore.minY || y > ore.maxY) {
+                continue;
+            }
+
+            Material current = data.getType(x, y, z);
+            if (current != Material.STONE && current != Material.DEEPSLATE) {
+                continue;
+            }
+
+            Material replacement = current == Material.DEEPSLATE
+                    ? toDeepslateOre(ore.material)
+                    : ore.material;
+
+            data.setBlock(x, y, z, replacement);
+            placed++;
+
+            if (placed >= size) {
+                break;
+            }
+        }
+    }
+
+    private Material toDeepslateOre(Material material) {
+        switch (material) {
+            case COAL_ORE: return Material.DEEPSLATE_COAL_ORE;
+            case IRON_ORE: return Material.DEEPSLATE_IRON_ORE;
+            case COPPER_ORE: return Material.DEEPSLATE_COPPER_ORE;
+            case GOLD_ORE: return Material.DEEPSLATE_GOLD_ORE;
+            case REDSTONE_ORE: return Material.DEEPSLATE_REDSTONE_ORE;
+            case LAPIS_ORE: return Material.DEEPSLATE_LAPIS_ORE;
+            case DIAMOND_ORE: return Material.DEEPSLATE_DIAMOND_ORE;
+            case EMERALD_ORE: return Material.DEEPSLATE_EMERALD_ORE;
+            default: return material;
+        }
+    }
+
+    private int randomBetween(Random random, int min, int max) {
+        return min + random.nextInt(max - min + 1);
+    }
+
+    private static final class OreDefinition {
+        private final Material material;
+        private final int veinSize;
+        private final int minY;
+        private final int maxY;
+
+        private OreDefinition(Material material, int veinSize, int minY, int maxY) {
+            this.material = material;
+            this.veinSize = veinSize;
+            this.minY = minY;
+            this.maxY = maxY;
         }
     }
 
