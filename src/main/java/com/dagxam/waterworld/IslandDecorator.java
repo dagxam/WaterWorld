@@ -2,16 +2,14 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.generator.ChunkGenerator;
-import org.bukkit.util.noise.SimplexOctaveGenerator;
 
 import java.util.Random;
 
 /**
- * Lightweight deterministic decoration for the single island.
+ * Ручное оформление единственного острова.
  *
- * This avoids relying entirely on vanilla decoration, which is not guaranteed
- * to decorate a custom ChunkGenerator the way a normal terrain generator does.
+ * Оформление делается детерминированно по seed мира и координатам чанка.
+ * Это позволяет получить одинаковый результат после регенерации мира.
  */
 public final class IslandDecorator {
 
@@ -30,29 +28,32 @@ public final class IslandDecorator {
     public void decorate(World world, int chunkX, int chunkZ) {
         long seed = world.getSeed()
                 ^ ((long) chunkX * 341873128712L)
-                ^ ((long) chunkZ * 132897987541L);
+                ^ ((long) chunkZ * 132897987541L)
+                ^ 0x6A09E667F3BCC909L;
 
         Random random = new Random(seed);
 
-        for (int i = 0; i < 4; i++) {
-            int x = chunkX * 16 + 2 + random.nextInt(12);
-            int z = chunkZ * 16 + 2 + random.nextInt(12);
+        // Больше растительности: остров должен выглядеть живым, а не пустым.
+        for (int i = 0; i < 9; i++) {
+            int x = chunkX * 16 + 3 + random.nextInt(10);
+            int z = chunkZ * 16 + 1 + random.nextInt(14);
 
-            if (!insideIsland(x, z, 4)) {
+            if (!insideIsland(x, z, 5)) {
                 continue;
             }
 
             int y = world.getHighestBlockYAt(x, z);
 
-            if (y <= seaLevel || world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) {
+            if (y <= seaLevel
+                    || world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) {
                 continue;
             }
 
             int type = random.nextInt(100);
 
-            if (type < 12) {
+            if (type < 16) {
                 placeTree(world, x, y + 1, z, random);
-            } else if (type < 35) {
+            } else if (type < 48) {
                 placeFlower(world, x, y + 1, z, random);
             } else {
                 placeGrass(world, x, y + 1, z);
@@ -63,11 +64,12 @@ public final class IslandDecorator {
     private boolean insideIsland(int x, int z, int margin) {
         double dx = x - centerX;
         double dz = z - centerZ;
-        return Math.sqrt(dx * dx + dz * dz) <= radius - margin;
+        return Math.sqrt(dx * dx + dz * dz) <= Math.max(0, radius - margin);
     }
 
     private void placeGrass(World world, int x, int y, int z) {
         if (world.getBlockAt(x, y, z).isEmpty()) {
+            // GRASS совместим с используемым Spigot API 1.20.2.
             world.getBlockAt(x, y, z).setType(Material.GRASS);
         }
     }
@@ -77,20 +79,36 @@ public final class IslandDecorator {
             return;
         }
 
-        Material flower = switch (random.nextInt(4)) {
-            case 0 -> Material.DANDELION;
-            case 1 -> Material.POPPY;
-            case 2 -> Material.AZURE_BLUET;
-            default -> Material.OXEYE_DAISY;
-        };
+        Material flower;
+        switch (random.nextInt(6)) {
+            case 0:
+                flower = Material.DANDELION;
+                break;
+            case 1:
+                flower = Material.POPPY;
+                break;
+            case 2:
+                flower = Material.AZURE_BLUET;
+                break;
+            case 3:
+                flower = Material.OXEYE_DAISY;
+                break;
+            case 4:
+                flower = Material.CORNFLOWER;
+                break;
+            default:
+                flower = Material.ALLIUM;
+                break;
+        }
 
         world.getBlockAt(x, y, z).setType(flower);
     }
 
     private void placeTree(World world, int x, int y, int z, Random random) {
-        int height = 4 + random.nextInt(2);
+        int height = 5 + random.nextInt(3);
 
-        for (int i = 0; i < height; i++) {
+        // Не строим дерево поверх уже занятого места.
+        for (int i = 0; i < height + 3; i++) {
             if (!world.getBlockAt(x, y + i, z).isEmpty()) {
                 return;
             }
@@ -100,12 +118,19 @@ public final class IslandDecorator {
             world.getBlockAt(x, y + i, z).setType(Material.OAK_LOG);
         }
 
-        int top = y + height;
+        int top = y + height - 1;
 
+        // Крона немного неровная, чтобы деревья не выглядели одинаковыми.
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    if (Math.abs(dx) == 2 && Math.abs(dz) == 2 && dy != 0) {
+                for (int dy = -1; dy <= 2; dy++) {
+                    int distance = Math.abs(dx) + Math.abs(dz);
+
+                    if (distance >= 4 && dy != 0) {
+                        continue;
+                    }
+
+                    if (dy == 2 && distance > 1) {
                         continue;
                     }
 
