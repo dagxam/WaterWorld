@@ -5,13 +5,20 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public class WaterWorldPlugin extends JavaPlugin {
 
+    private WaterGenerator generator;
+
     @Override
     public void onEnable() {
-        getLogger().info("Плагин WaterWorld от dagxam успешно запущен!");
+        saveDefaultConfig();
+        generator = new WaterGenerator(getConfig());
+        getLogger().info("WaterWorld 2.0 успешно запущен.");
     }
 
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
-        return new WaterGenerator();
+        if (generator == null) {
+            generator = new WaterGenerator(getConfig());
+        }
+        return generator;
     }
 }
