@@ -14,12 +14,9 @@ import java.util.Random;
 /**
  * WaterWorld terrain generator.
  *
- * Important design points:
- * - Noise generators are initialized once per world seed, not once per chunk.
- * - The ocean and island are generated in separate, readable stages.
- * - The island has a PLAINS biome, grass/dirt layers and is above sea level.
- * - Vanilla decorations and mob generation remain enabled, allowing plains
- *   trees/grass and passive animals to spawn naturally.
+ * The island is deliberately larger than the visible land area:
+ * the outer part is a shallow underwater shelf, so the coast does not
+ * end with a vertical wall.
  */
 public final class WaterGenerator extends ChunkGenerator {
 
@@ -35,11 +32,13 @@ public final class WaterGenerator extends ChunkGenerator {
     private final boolean islandEnabled;
     private final int islandCenterX;
     private final int islandCenterZ;
+
+    // Inner radius = actual land. Outer radius = underwater slope/shelf.
     private final int islandRadius;
+    private final int islandSlopeRadius;
     private final int islandHeight;
     private final double islandVariation;
     private final double islandNoiseScale;
-    private final double shorelineRadius;
 
     private long initializedSeed = Long.MIN_VALUE;
     private SimplexOctaveGenerator terrainGen;
@@ -59,11 +58,16 @@ public final class WaterGenerator extends ChunkGenerator {
         islandEnabled = config.getBoolean("island.enabled", true);
         islandCenterX = config.getInt("island.center-x", 0);
         islandCenterZ = config.getInt("island.center-z", 0);
-        islandRadius = Math.max(8, config.getInt("island.radius", 17));
+
+        islandRadius = Math.max(8, config.getInt("island.radius", 16));
+        islandSlopeRadius = Math.max(
+                islandRadius + 4,
+                config.getInt("island.slope-radius", 29)
+        );
+
         islandHeight = Math.max(2, config.getInt("island.height", 7));
-        islandVariation = config.getDouble("island.variation", 1.5D);
-        islandNoiseScale = config.getDouble("island.noise-scale", 0.09D);
-        shorelineRadius = Math.max(0.5D, config.getDouble("island.shoreline-radius", 2.5D));
+        islandVariation = config.getDouble("island.variation", 1.2D);
+        islandNoiseScale = config.getDouble("island.noise-scale", 0.07D);
     }
 
     private synchronized void ensureGenerators(long seed) {
@@ -84,50 +88,95 @@ public final class WaterGenerator extends ChunkGenerator {
     }
 
     @Override
-    public void generateNoise(WorldInfo worldInfo, Random random, int chunkX, int chunkZ, ChunkData chunkData) {
+    public void generateNoise(
+            WorldInfo worldInfo,
+            Random random,
+            int chunkX,
+            int chunkZ,
+            ChunkData chunkData
+    ) {
         ensureGenerators(worldInfo.getSeed());
 
         int minHeight = worldInfo.getMinHeight();
+        int maxIslandY = seaLevel + islandHeight + 3;
 
         for (int localX = 0; localX < 16; localX++) {
             for (int localZ = 0; localZ < 16; localZ++) {
+
                 int x = chunkX * 16 + localX;
                 int z = chunkZ * 16 + localZ;
 
-                double islandDistance = distanceToIsland(x, z);
-                boolean island = islandEnabled && islandDistance <= islandRadius;
+                double distance = distanceToIsland(x, z);
 
-                double terrainNoise = terrainGen.noise(x, z, 0.5D, 0.5D, true);
-                int oceanFloor = clamp(
-                        oceanBaseHeight + (int) Math.round(terrainNoise * oceanHeightAmplitude),
-                        minHeight + 2,
-                        seaLevel - 1
-                );
+                int oceanFloor = getOceanFloor(worldInfo, x, z);
 
-                int surface = island ? getIslandSurface(x, z, islandDistance) : oceanFloor;
+                /*
+                 * Generate high enough to actually create the grass surface.
+                 * The previous version stopped at sea level, which is why the
+                 * island looked like exposed dirt instead of a real grassy island.
+                 */
+                for (int y = minHeight + 1; y <= maxIslandY; y++) {
+                    if (islandEnabled && distance <= islandSlopeRadius) {
+                        int islandSurface = getIslandSurface(x, z, distance);
+
+                        if (distance <= islandSlopeRadius) {
+                            setIslandTerrain(
+                                    chunkData,
+                                    localX,
+                                    localZ,
+                                    x,
+                                    z,
+                                    y,
+                                    islandSurface,
+                                    distance,
+                                    oceanFloor
+                            );
+                            continue;
+                        }
+                    }
+
+                    setOceanTerrain(
+                            chunkData,
+                            localX,
+                            localZ,
+                            x,
+                            z,
+                            y,
+                            oceanFloor,
+                            minHeight
+                    );
+                }
 
                 chunkData.setBlock(localX, minHeight, localZ, Material.BEDROCK);
-
-                for (int y = minHeight + 1; y <= seaLevel; y++) {
-                    if (island) {
-                        setIslandBlock(chunkData, localX, localZ, x, z, y, surface, islandDistance);
-                    } else {
-                        setOceanBlock(chunkData, localX, localZ, x, z, y, oceanFloor);
-                    }
-                }
             }
         }
     }
 
-    private void setOceanBlock(
+    private int getOceanFloor(WorldInfo info, int x, int z) {
+        double noise = terrainGen.noise(x, z, 0.5D, 0.5D, true);
+
+        return clamp(
+                oceanBaseHeight + (int) Math.round(noise * oceanHeightAmplitude),
+                info.getMinHeight() + 2,
+                seaLevel - 1
+        );
+    }
+
+    private void setOceanTerrain(
             ChunkData data,
             int localX,
             int localZ,
             int x,
             int z,
             int y,
-            int floor
+            int floor,
+            int minHeight
     ) {
+        if (y > seaLevel) {
+            data.setBlock(localX, y, localZ, Material.AIR);
+            return;
+        }
+
         if (y > floor) {
             data.setBlock(localX, y, localZ, Material.WATER);
             return;
@@ -149,7 +198,7 @@ public final class WaterGenerator extends ChunkGenerator {
         }
     }
 
-    private void setIslandBlock(
+    private void setIslandTerrain(
             ChunkData data,
             int localX,
             int localZ,
@@ -157,30 +206,53 @@ public final class WaterGenerator extends ChunkGenerator {
             int z,
             int y,
             int surface,
-            double distance
+            double distance,
+            int oceanFloor
     ) {
+        /*
+         * Land in the inner radius, underwater slope in the outer radius.
+         * The surface smoothly goes from ~Y70 down toward the ocean floor.
+         */
         if (y > surface) {
-            data.setBlock(localX, y, localZ, Material.AIR);
+            if (y <= seaLevel && surface < seaLevel) {
+                data.setBlock(localX, y, localZ, Material.WATER);
+            } else {
+                data.setBlock(localX, y, localZ, Material.AIR);
+            }
             return;
         }
 
         if (y <= 0) {
             data.setBlock(localX, y, localZ, Material.DEEPSLATE);
-        } else if (y < surface - 5) {
+            return;
+        }
+
+        /*
+         * The underwater part remains mostly stone/sand, while actual land
+         * gets a natural dirt/grass top.
+         */
+        if (surface <= seaLevel) {
+            if (y < surface - 4) {
+                data.setBlock(localX, y, localZ, Material.STONE);
+            } else if (y < surface - 1) {
+                data.setBlock(localX, y, localZ, Material.SANDSTONE);
+            } else {
+                data.setBlock(localX, y, localZ, Material.SAND);
+            }
+            return;
+        }
+
+        if (y < surface - 5) {
             data.setBlock(localX, y, localZ, Material.STONE);
         } else if (y < surface - 1) {
             data.setBlock(localX, y, localZ, Material.DIRT);
         } else {
-            boolean shoreline =
-                    distance >= islandRadius - shorelineRadius ||
-                    surface <= seaLevel + 1;
-
-            data.setBlock(
-                    localX,
-                    y,
-                    localZ,
-                    shoreline ? Material.SAND : Material.GRASS_BLOCK
-            );
+            /*
+             * Real grass block at the actual top.
+             * The old generator never reached this Y because it stopped at
+             * sea level, causing the screenshot's dirt-only surface.
+             */
+            data.setBlock(localX, y, localZ, Material.GRASS_BLOCK);
         }
     }
 
@@ -189,20 +261,47 @@ public final class WaterGenerator extends ChunkGenerator {
     }
 
     private int getIslandSurface(int x, int z, double distance) {
-        double edgeFactor = 1.0D - distance / islandRadius;
-        edgeFactor = Math.max(0.0D, Math.min(1.0D, edgeFactor));
+        double inner = islandRadius;
+        double outer = islandSlopeRadius;
 
-        double variation = islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation;
+        if (distance <= inner) {
+            double factor = 1.0D - distance / inner;
+            double variation =
+                    islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation;
 
-        double height =
-                seaLevel + 1.0D +
-                Math.pow(edgeFactor, 1.35D) * islandHeight +
-                variation;
+            return clamp(
+                    seaLevel + 1 + (int) Math.round(
+                            Math.pow(Math.max(0, factor), 1.25D) * islandHeight
+                                    + variation
+                    ),
+                    seaLevel + 1,
+                    seaLevel + islandHeight + 2
+            );
+        }
 
-        return clamp(
-                (int) Math.round(height),
-                seaLevel + 1,
-                seaLevel + islandHeight + 2
+        /*
+         * Underwater shelf:
+         * at the edge of the real island it is around sea level,
+         * then it gradually descends to the normal ocean floor.
+         */
+        double t = (distance - inner) / (outer - inner);
+        t = Math.max(0.0D, Math.min(1.0D, t));
+
+        double edgeHeight = seaLevel - 1.0D;
+        double oceanHeight = getLocalOceanHeight(x, z);
+
+        // Smoothstep gives a much softer coast than linear interpolation.
+        double smooth = t * t * (3.0D - 2.0D * t);
+
+        return (int) Math.round(edgeHeight + (oceanHeight - edgeHeight) * smooth);
+    }
+
+    private double getLocalOceanHeight(int x, int z) {
+        double noise = terrainGen.noise(x, z, 0.5D, 0.5D, true);
+        return clampDouble(
+                oceanBaseHeight + noise * oceanHeightAmplitude,
+                24.0D,
+                seaLevel - 1.0D
         );
     }
 
@@ -216,14 +315,26 @@ public final class WaterGenerator extends ChunkGenerator {
         return Math.max(min, Math.min(max, value));
     }
 
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     @Override
     public BiomeProvider getDefaultBiomeProvider(WorldInfo worldInfo) {
         return new BiomeProvider() {
             @Override
             public Biome getBiome(WorldInfo info, int x, int y, int z) {
-                if (islandEnabled && distanceToIsland(x, z) <= islandRadius) {
+                double distance = distanceToIsland(x, z);
+
+                /*
+                 * Only the actual dry land is PLAINS.
+                 * The underwater slope remains WARM_OCEAN so underwater
+                 * vegetation and ocean behavior stay natural.
+                 */
+                if (islandEnabled && distance <= islandRadius) {
                     return Biome.PLAINS;
                 }
+
                 return Biome.WARM_OCEAN;
             }
 
@@ -236,14 +347,11 @@ public final class WaterGenerator extends ChunkGenerator {
 
     @Override
     public boolean shouldGenerateDecorations() {
-        // PLAINS decorations provide grass/flowers/trees; WARM_OCEAN provides
-        // the normal underwater vegetation.
         return true;
     }
 
     @Override
     public boolean shouldGenerateCaves() {
-        // Custom cave noise is used for ocean terrain.
         return false;
     }
 
@@ -259,8 +367,6 @@ public final class WaterGenerator extends ChunkGenerator {
 
     @Override
     public boolean shouldGenerateMobs() {
-        // Lets the normal Minecraft spawning system use the PLAINS biome on
-        // the island, including passive animals such as cows and sheep.
         return true;
     }
 }
