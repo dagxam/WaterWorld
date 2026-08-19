@@ -2,12 +2,15 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Chunk;
 import org.bukkit.World;
+import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkPopulateEvent;
+import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -35,11 +38,17 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                     getConfig().getInt("sea-level", 63),
                     getConfig().getInt("island.center-x", 0),
                     getConfig().getInt("island.center-z", 0),
-                    getConfig().getInt("island.radius", 18)
+                    getConfig().getInt("island.radius", 32)
             );
         }
 
         getServer().getPluginManager().registerEvents(this, this);
+
+        // Если мир уже загружен к моменту включения плагина, сразу переносим
+        // мировой spawn на безопасную точку центрального острова.
+        for (World world : getServer().getWorlds()) {
+            scheduleIslandSpawn(world);
+        }
 
         getLogger().info("WaterWorld успешно запущен.");
         getLogger().info("Создаётся один большой остров с плавным подводным склоном.");
@@ -51,6 +60,69 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             generator = new WaterGenerator(getConfig());
         }
         return generator;
+    }
+
+    @EventHandler
+    public void onWorldLoad(WorldLoadEvent event) {
+        scheduleIslandSpawn(event.getWorld());
+    }
+
+    private void scheduleIslandSpawn(World world) {
+        if (!getConfig().getBoolean("island.enabled", true)) {
+            return;
+        }
+
+        getServer().getScheduler().runTask(this, () -> setIslandSpawn(world));
+    }
+
+    private void setIslandSpawn(World world) {
+        int centerX = getConfig().getInt("island.center-x", 0);
+        int centerZ = getConfig().getInt("island.center-z", 0);
+        int radius = getConfig().getInt("island.radius", 32);
+        int searchRadius = Math.min(10, Math.max(4, radius / 4));
+
+        // Загружаем центральный чанк, чтобы высота острова была доступна.
+        world.getChunkAt(centerX >> 4, centerZ >> 4).load();
+
+        Location safe = findSafeSpawn(world, centerX, centerZ, searchRadius);
+        if (safe == null) {
+            getLogger().warning("Не удалось найти безопасную точку spawn на острове.");
+            return;
+        }
+
+        world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
+        getLogger().info("Spawn мира установлен на острове: "
+                + safe.getBlockX() + ", " + safe.getBlockY() + ", " + safe.getBlockZ());
+    }
+
+    private Location findSafeSpawn(World world, int centerX, int centerZ, int searchRadius) {
+        Location best = null;
+        double bestDistance = Double.MAX_VALUE;
+
+        for (int dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (int dz = -searchRadius; dz <= searchRadius; dz++) {
+                int x = centerX + dx;
+                int z = centerZ + dz;
+                int y = world.getHighestBlockYAt(x, z);
+
+                if (world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) {
+                    continue;
+                }
+
+                if (!world.getBlockAt(x, y + 1, z).isEmpty()
+                        || !world.getBlockAt(x, y + 2, z).isEmpty()) {
+                    continue;
+                }
+
+                double distance = (double) dx * dx + (double) dz * dz;
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = new Location(world, x + 0.5D, y + 1.0D, z + 0.5D);
+                }
+            }
+        }
+
+        return best;
     }
 
     @EventHandler
@@ -76,7 +148,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private boolean isChunkNearIsland(int chunkX, int chunkZ) {
         int centerX = getConfig().getInt("island.center-x", 0);
         int centerZ = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 18);
+        int radius = getConfig().getInt("island.radius", 32);
 
         double x = chunkX * 16 + 8;
         double z = chunkZ * 16 + 8;
@@ -91,7 +163,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private void spawnAnimals(World world, Chunk chunk) {
         int centerX = getConfig().getInt("island.center-x", 0);
         int centerZ = getConfig().getInt("island.center-z", 0);
-        int radius = Math.max(4, getConfig().getInt("island.radius", 18) - 5);
+        int radius = Math.max(4, getConfig().getInt("island.radius", 32) - 5);
         int seaLevel = getConfig().getInt("sea-level", 63);
 
         int maxAnimals = Math.max(1, getConfig().getInt("island.animals.max-total", 20));
