@@ -68,7 +68,7 @@ public final class IslandDecorator {
 
     private void placeGrass(World world, int x, int y, int z) {
         if (world.getBlockAt(x, y, z).isEmpty()) {
-            world.getBlockAt(x, y, z).setType(Material.SHORT_GRASS);
+            world.getBlockAt(x, y, z).setType(Material.GRASS);
         }
     }
 
