@@ -2,6 +2,7 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Chunk;
 import org.bukkit.World;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -12,6 +13,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Random;
 
+/**
+ * Главный класс WaterWorld.
+ *
+ * Создаёт генератор океана и единственного острова, а также оформляет
+ * остров растительностью и заселяет его животными.
+ */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private WaterGenerator generator;
@@ -28,13 +35,14 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                     getConfig().getInt("sea-level", 63),
                     getConfig().getInt("island.center-x", 0),
                     getConfig().getInt("island.center-z", 0),
-                    getConfig().getInt("island.radius", 16)
+                    getConfig().getInt("island.radius", 18)
             );
         }
 
         getServer().getPluginManager().registerEvents(this, this);
 
-        getLogger().info("WaterWorld 2.1 успешно запущен.");
+        getLogger().info("WaterWorld успешно запущен.");
+        getLogger().info("Создаётся один большой остров с плавным подводным склоном.");
     }
 
     @Override
@@ -54,37 +62,44 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = event.getWorld();
         Chunk chunk = event.getChunk();
 
-        // Decorations are only for the central island.
         if (!isChunkNearIsland(chunk.getX(), chunk.getZ())) {
             return;
         }
 
         decorator.decorate(world, chunk.getX(), chunk.getZ());
 
-        /*
-         * A few passive animals are seeded when the chunk is first generated.
-         * ChunkPopulateEvent fires on initial population, avoiding respawning
-         * the same animals every time a player returns.
-         */
-        spawnAnimals(world, chunk);
+        if (getConfig().getBoolean("island.animals.enabled", true)) {
+            spawnAnimals(world, chunk);
+        }
     }
 
     private boolean isChunkNearIsland(int chunkX, int chunkZ) {
-        int minX = chunkX * 16;
-        int minZ = chunkZ * 16;
+        int centerX = getConfig().getInt("island.center-x", 0);
+        int centerZ = getConfig().getInt("island.center-z", 0);
+        int radius = getConfig().getInt("island.radius", 18);
 
-        double dx = minX + 8 - getConfig().getInt("island.center-x", 0);
-        double dz = minZ + 8 - getConfig().getInt("island.center-z", 0);
+        double x = chunkX * 16 + 8;
+        double z = chunkZ * 16 + 8;
+        double dx = x - centerX;
+        double dz = z - centerZ;
 
-        int radius = getConfig().getInt("island.radius", 16) + 16;
-        return dx * dx + dz * dz <= (double) radius * radius;
+        // Оформляем только сухую часть + ближайшие чанки.
+        int checkRadius = radius + 16;
+        return dx * dx + dz * dz <= (double) checkRadius * checkRadius;
     }
 
     private void spawnAnimals(World world, Chunk chunk) {
         int centerX = getConfig().getInt("island.center-x", 0);
         int centerZ = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 16) - 3;
+        int radius = Math.max(4, getConfig().getInt("island.radius", 18) - 5);
         int seaLevel = getConfig().getInt("sea-level", 63);
+
+        int maxAnimals = Math.max(1, getConfig().getInt("island.animals.max-total", 20));
+        int animalsPerChunk = Math.max(1, getConfig().getInt("island.animals.per-chunk", 2));
+
+        if (countIslandAnimals(world, centerX, centerZ, radius) >= maxAnimals) {
+            return;
+        }
 
         Random random = new Random(
                 world.getSeed()
@@ -93,9 +108,13 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                         ^ 0x5DEECE66DL
         );
 
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < animalsPerChunk; i++) {
+            if (countIslandAnimals(world, centerX, centerZ, radius) >= maxAnimals) {
+                return;
+            }
+
             int x = chunk.getX() * 16 + 2 + random.nextInt(12);
-            int z = chunk.getZ() * 16 + 2 + random.nextInt(12);
+            int z = chunk.getZ() * 16 + 1 + random.nextInt(14);
 
             double dx = x - centerX;
             double dz = z - centerZ;
@@ -106,20 +125,59 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
             int y = world.getHighestBlockYAt(x, z);
 
-            if (y <= seaLevel || !world.getBlockAt(x, y, z).getType().isSolid()) {
+            if (y <= seaLevel
+                    || world.getBlockAt(x, y, z).getType() != org.bukkit.Material.GRASS_BLOCK) {
                 continue;
             }
 
-            EntityType type = random.nextBoolean()
-                    ? EntityType.COW
-                    : EntityType.SHEEP;
+            EntityType type;
+            switch (random.nextInt(4)) {
+                case 0:
+                    type = EntityType.COW;
+                    break;
+                case 1:
+                    type = EntityType.SHEEP;
+                    break;
+                case 2:
+                    type = EntityType.PIG;
+                    break;
+                default:
+                    type = EntityType.CHICKEN;
+                    break;
+            }
 
-            LivingEntity entity = (LivingEntity) world.spawnEntity(
+            Entity spawned = world.spawnEntity(
                     world.getBlockAt(x, y + 1, z).getLocation(),
                     type
             );
 
-            entity.setPersistent(true);
+            if (spawned instanceof LivingEntity) {
+                ((LivingEntity) spawned).setPersistent(true);
+            }
         }
+    }
+
+    private int countIslandAnimals(World world, int centerX, int centerZ, int radius) {
+        int count = 0;
+
+        for (Entity entity : world.getEntities()) {
+            EntityType type = entity.getType();
+
+            if (type != EntityType.COW
+                    && type != EntityType.SHEEP
+                    && type != EntityType.PIG
+                    && type != EntityType.CHICKEN) {
+                continue;
+            }
+
+            double dx = entity.getLocation().getX() - centerX;
+            double dz = entity.getLocation().getZ() - centerZ;
+
+            if (dx * dx + dz * dz <= (double) radius * radius) {
+                count++;
+            }
+        }
+
+        return count;
     }
 }
