@@ -1,0 +1,23 @@
+# WaterWorld 2.0
+# The central island is generated around X/Z = 0.
+
+sea-level: 63
+
+ocean:
+  base-height: 35
+  height-amplitude: 12
+  terrain-scale: 0.005
+  cave-scale: 0.015
+  cave-threshold: 0.64
+  cave-roof: 8
+
+island:
+  enabled: true
+  center-x: 0
+  center-z: 0
+  radius: 17
+  height: 7
+  variation: 1.5
+  noise-scale: 0.09
+  shoreline-radius: 2.5
+  biome: PLAINS
