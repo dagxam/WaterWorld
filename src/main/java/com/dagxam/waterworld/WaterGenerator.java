@@ -59,14 +59,14 @@ public final class WaterGenerator extends ChunkGenerator {
         islandCenterX = config.getInt("island.center-x", 0);
         islandCenterZ = config.getInt("island.center-z", 0);
 
-        islandRadius = Math.max(8, config.getInt("island.radius", 16));
+        islandRadius = Math.max(8, config.getInt("island.radius", 18));
         islandSlopeRadius = Math.max(
                 islandRadius + 4,
-                config.getInt("island.slope-radius", 29)
+                config.getInt("island.slope-radius", 32)
         );
 
-        islandHeight = Math.max(2, config.getInt("island.height", 7));
-        islandVariation = config.getDouble("island.variation", 1.2D);
+        islandHeight = Math.max(2, config.getInt("island.height", 9));
+        islandVariation = config.getDouble("island.variation", 1.6D);
         islandNoiseScale = config.getDouble("island.noise-scale", 0.07D);
     }
 
