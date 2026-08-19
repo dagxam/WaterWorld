@@ -14,13 +14,15 @@ import org.bukkit.plugin.java.JavaPlugin;
 /**
  * Главный класс WaterWorld.
  *
- * Создаёт генератор океана и большого центрального острова, оформляет его
- * растительностью и оставляет спавн мобов стандартной системе Minecraft.
+ * Центральный остров остаётся главным местом появления игрока.
+ * Вокруг него дополнительно создаются пять небольших островов.
+ * Мобы полностью переданы стандартной системе Minecraft.
  */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private WaterGenerator generator;
     private IslandDecorator decorator;
+    private SatelliteIslandGenerator satelliteIslands;
 
     @Override
     public void onEnable() {
@@ -29,11 +31,23 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         generator = new WaterGenerator(getConfig());
 
         if (getConfig().getBoolean("island.enabled", true)) {
-            decorator = new IslandDecorator(
-                    getConfig().getInt("sea-level", 63),
-                    getConfig().getInt("island.center-x", 0),
-                    getConfig().getInt("island.center-z", 0),
-                    getConfig().getInt("island.radius", 48)
+            int seaLevel = getConfig().getInt("sea-level", 63);
+            int centerX = getConfig().getInt("island.center-x", 0);
+            int centerZ = getConfig().getInt("island.center-z", 0);
+            int radius = getConfig().getInt("island.radius", 48);
+
+            decorator = new IslandDecorator(seaLevel, centerX, centerZ, radius);
+
+            satelliteIslands = new SatelliteIslandGenerator(
+                    seaLevel,
+                    centerX,
+                    centerZ,
+                    getConfig().getInt("island.satellites.count", 5),
+                    getConfig().getInt("island.satellites.distance", 130),
+                    getConfig().getInt("island.satellites.min-radius", 12),
+                    getConfig().getInt("island.satellites.max-radius", 19),
+                    getConfig().getInt("island.satellites.slope-radius", 30),
+                    getConfig().getInt("island.satellites.height", 6)
             );
         }
 
@@ -44,7 +58,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
 
         getLogger().info("WaterWorld успешно запущен.");
-        getLogger().info("Создаётся один большой остров с плавным подводным склоном.");
+        getLogger().info("Создаётся большой центральный остров и пять островов вокруг него.");
         getLogger().info("Спавн животных и враждебных мобов передан стандартной системе Minecraft.");
     }
 
@@ -120,14 +134,14 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onChunkPopulate(ChunkPopulateEvent event) {
-        if (decorator == null) {
-            return;
-        }
-
         World world = event.getWorld();
         Chunk chunk = event.getChunk();
 
-        if (!isChunkNearIsland(chunk.getX(), chunk.getZ())) {
+        if (satelliteIslands != null) {
+            satelliteIslands.generate(world, chunk.getX(), chunk.getZ());
+        }
+
+        if (decorator == null || !isChunkNearMainIsland(chunk.getX(), chunk.getZ())) {
             return;
         }
 
@@ -136,7 +150,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         // Пассивные и враждебные мобы появляются стандартно через Minecraft.
     }
 
-    private boolean isChunkNearIsland(int chunkX, int chunkZ) {
+    private boolean isChunkNearMainIsland(int chunkX, int chunkZ) {
         int centerX = getConfig().getInt("island.center-x", 0);
         int centerZ = getConfig().getInt("island.center-z", 0);
         int radius = getConfig().getInt("island.radius", 48);
