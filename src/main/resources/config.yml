@@ -1,5 +1,4 @@
-# WaterWorld 2.0
-# The central island is generated around X/Z = 0.
+# WaterWorld 2.1
 
 sea-level: 63
 
@@ -13,11 +12,26 @@ ocean:
 
 island:
   enabled: true
+
+  # Center of the only island.
   center-x: 0
   center-z: 0
-  radius: 17
+
+  # Dry land radius. About 32 blocks across.
+  radius: 16
+
+  # Full island + underwater gradual slope.
+  # About 58 blocks across.
+  slope-radius: 29
+
+  # Height above sea level.
   height: 7
-  variation: 1.5
-  noise-scale: 0.09
-  shoreline-radius: 2.5
+
+  # Small natural height variation.
+  variation: 1.2
+
+  # Controls gentle surface variation.
+  noise-scale: 0.07
+
+  # Actual dry island biome.
   biome: PLAINS
