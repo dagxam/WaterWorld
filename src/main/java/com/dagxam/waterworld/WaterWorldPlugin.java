@@ -26,35 +26,54 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             int seaLevel = getConfig().getInt("sea-level", 63);
             int centerX = getConfig().getInt("island.center-x", 0);
             int centerZ = getConfig().getInt("island.center-z", 0);
-            int radius = getConfig().getInt("island.radius", 90);
+            int radius = getConfig().getInt("island.radius", 100);
             decorator = new IslandDecorator(seaLevel, centerX, centerZ, radius);
 
             if (getConfig().getBoolean("island.mountain.enabled", true)) {
+                int offsetX = getConfig().getInt("island.mountain.offset-x", 0);
+                int offsetZ = getConfig().getInt("island.mountain.offset-z", -22);
+                int mountainRadius = getConfig().getInt("island.mountain.radius", 66);
+                int peakHeight = getConfig().getInt("island.mountain.peak-height", 145);
+                int snowLine = getConfig().getInt("island.mountain.snow-line", 108);
+                boolean secondaryPeaks = getConfig().getBoolean(
+                        "island.mountain.secondary-peaks", true
+                );
+
                 mountain = new MountainDecorator(
                         seaLevel,
-                        centerX + getConfig().getInt("island.mountain.offset-x", 18),
-                        centerZ + getConfig().getInt("island.mountain.offset-z", 8),
-                        getConfig().getInt("island.mountain.radius", 48),
-                        getConfig().getInt("island.mountain.peak-height", 125)
+                        centerX + offsetX,
+                        centerZ + offsetZ,
+                        mountainRadius,
+                        peakHeight,
+                        snowLine,
+                        secondaryPeaks
                 );
             }
         }
 
         getServer().getPluginManager().registerEvents(this, this);
-        for (World world : getServer().getWorlds()) scheduleIslandSpawn(world);
+        for (World world : getServer().getWorlds()) {
+            scheduleIslandSpawn(world);
+        }
+
         getLogger().info("WaterWorld успешно запущен.");
-        getLogger().info("Создаётся один большой главный остров с равниной и снежной горой.");
+        getLogger().info("Создаётся один большой остров с широкой равниной и снежной горой.");
         getLogger().info("Спавн мобов передан стандартной системе Minecraft.");
+        getLogger().info("Генерация руд включена.");
     }
 
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
-        if (generator == null) generator = new WaterGenerator(getConfig());
+        if (generator == null) {
+            generator = new WaterGenerator(getConfig());
+        }
         return generator;
     }
 
     @EventHandler
-    public void onWorldLoad(WorldLoadEvent event) { scheduleIslandSpawn(event.getWorld()); }
+    public void onWorldLoad(WorldLoadEvent event) {
+        scheduleIslandSpawn(event.getWorld());
+    }
 
     private void scheduleIslandSpawn(World world) {
         if (!getConfig().getBoolean("island.enabled", true)) return;
@@ -64,28 +83,33 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private void setIslandSpawn(World world) {
         int cx = getConfig().getInt("island.center-x", 0);
         int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 90);
-        int search = Math.min(16, Math.max(4, radius / 4));
+        int radius = getConfig().getInt("island.radius", 100);
+        int search = Math.min(16, Math.max(4, radius / 5));
+
         world.getChunkAt(cx >> 4, cz >> 4).load();
         Location safe = findSafeSpawn(world, cx, cz, search);
         if (safe == null) {
             getLogger().warning("Не удалось найти безопасную точку spawn на острове.");
             return;
         }
+
         world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
     }
 
     private Location findSafeSpawn(World world, int cx, int cz, int radius) {
         Location best = null;
         double bestDistance = Double.MAX_VALUE;
+
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 int x = cx + dx;
                 int z = cz + dz;
                 int y = world.getHighestBlockYAt(x, z);
+
                 if (world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
                 if (!world.getBlockAt(x, y + 1, z).isEmpty()
                         || !world.getBlockAt(x, y + 2, z).isEmpty()) continue;
+
                 double d = (double) dx * dx + (double) dz * dz;
                 if (d < bestDistance) {
                     bestDistance = d;
@@ -93,6 +117,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 }
             }
         }
+
         return best;
     }
 
@@ -101,7 +126,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = event.getWorld();
         Chunk chunk = event.getChunk();
 
-        if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
+        // Сначала формируем гору, затем траву/цветы/деревья поверх неё.
+        if (mountain != null) {
+            mountain.generate(world, chunk.getX(), chunk.getZ());
+        }
+
         if (decorator != null && isChunkNearMainIsland(chunk.getX(), chunk.getZ())) {
             decorator.decorate(world, chunk.getX(), chunk.getZ());
         }
@@ -110,12 +139,14 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private boolean isChunkNearMainIsland(int chunkX, int chunkZ) {
         int cx = getConfig().getInt("island.center-x", 0);
         int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 90);
+        int radius = getConfig().getInt("island.radius", 100);
+
         double x = chunkX * 16 + 8;
         double z = chunkZ * 16 + 8;
         double dx = x - cx;
         double dz = z - cz;
         int check = radius + 16;
+
         return dx * dx + dz * dz <= (double) check * check;
     }
 }
