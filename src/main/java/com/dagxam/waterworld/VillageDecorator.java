@@ -43,19 +43,15 @@ public final class VillageDecorator {
 
         if (good.size() < 3) return;
 
-        // Загружаем чанки заранее, чтобы дома не были перезаписаны последующей генерацией.
-        for (int[] p : good) {
-            int chunkX = p[0] >> 4;
-            int chunkZ = p[1] >> 4;
-            world.getChunkAt(chunkX, chunkZ).load();
-        }
+        // Блокируем повторный запуск до загрузки соседних чанков,
+        // иначе их ChunkPopulateEvent может вызвать генерацию деревни повторно.
+        generated = true;
+        for (int[] p : good) world.getChunkAt(p[0] >> 4, p[1] >> 4).load();
 
         Random random = new Random(world.getSeed() ^ 0xBADC0FFEE0DDF00DL);
         for (int[] p : good) buildHouse(world, p[0], p[1], random);
-
         buildPathsAndBell(world, cx, cz, good);
-        spawnVillagers(world, good, random);
-        generated = true;
+        spawnVillagers(world, good);
     }
 
     private boolean isInsideIsland(int x, int z, int margin) {
@@ -82,16 +78,12 @@ public final class VillageDecorator {
         int minX = x - w / 2, minZ = z - d / 2;
 
         for (int bx = minX - 1; bx <= minX + w; bx++) {
-            for (int bz = minZ - 1; bz <= minZ + d; bz++) {
-                world.getBlockAt(bx, ground, bz).setType(Material.GRAVEL, false);
-            }
+            for (int bz = minZ - 1; bz <= minZ + d; bz++) world.getBlockAt(bx, ground, bz).setType(Material.GRAVEL, false);
         }
 
         for (int bx = minX; bx < minX + w; bx++) {
             for (int bz = minZ; bz < minZ + d; bz++) {
-                for (int y = ground + 1; y <= ground + wallH + 2; y++) {
-                    world.getBlockAt(bx, y, bz).setType(Material.AIR, false);
-                }
+                for (int y = ground + 1; y <= ground + wallH + 2; y++) world.getBlockAt(bx, y, bz).setType(Material.AIR, false);
                 world.getBlockAt(bx, ground + 1, bz).setType(Material.COBBLESTONE, false);
             }
         }
@@ -109,30 +101,23 @@ public final class VillageDecorator {
             }
         }
 
-        // Окна.
         world.getBlockAt(x - 2, ground + 3, minZ).setType(Material.GLASS_PANE, false);
         world.getBlockAt(x + 2, ground + 3, minZ + d - 1).setType(Material.GLASS_PANE, false);
         world.getBlockAt(minX, ground + 3, z).setType(Material.GLASS_PANE, false);
         world.getBlockAt(minX + w - 1, ground + 3, z).setType(Material.GLASS_PANE, false);
-
-        // Дверь и интерьер.
         world.getBlockAt(x, ground + 2, minZ).setType(Material.OAK_DOOR, false);
         world.getBlockAt(x, ground + 3, minZ).setType(Material.OAK_DOOR, false);
         world.getBlockAt(x - 1, ground + 2, z).setType(Material.CHEST, false);
         world.getBlockAt(x + 1, ground + 2, z).setType(random.nextBoolean() ? Material.COMPOSTER : Material.FLETCHING_TABLE, false);
 
-        // Двускатная крыша.
         for (int layer = 0; layer <= 3; layer++) {
             int y = ground + wallH + 1 + layer;
-            int fromX = minX + layer;
-            int toX = minX + w - 1 - layer;
+            int fromX = minX + layer, toX = minX + w - 1 - layer;
             for (int bx = fromX; bx <= toX; bx++) {
                 world.getBlockAt(bx, y, minZ).setType(Material.OAK_PLANKS, false);
                 world.getBlockAt(bx, y, minZ + d - 1).setType(Material.OAK_PLANKS, false);
             }
         }
-
-        // Кровать.
         world.getBlockAt(x, ground + 2, z + 1).setType(random.nextBoolean() ? Material.RED_BED : Material.WHITE_BED, false);
     }
 
@@ -151,13 +136,12 @@ public final class VillageDecorator {
         world.getBlockAt(cx, y + 1, cz).setType(Material.BELL, false);
     }
 
-    private void spawnVillagers(World world, List<int[]> houses, Random random) {
+    private void spawnVillagers(World world, List<int[]> houses) {
         for (int i = 0; i < Math.min(5, houses.size()); i++) {
             int[] p = houses.get(i);
-            int x = p[0], z = p[1];
-            int y = world.getHighestBlockYAt(x, z) + 1;
+            int y = world.getHighestBlockYAt(p[0], p[1]) + 1;
             Villager villager = (Villager) world.spawnEntity(
-                    new org.bukkit.Location(world, x + .5D, y, z + .5D), EntityType.VILLAGER);
+                    new org.bukkit.Location(world, p[0] + .5D, y, p[1] + .5D), EntityType.VILLAGER);
             switch (i % 4) {
                 case 0: villager.setProfession(Villager.Profession.FARMER); break;
                 case 1: villager.setProfession(Villager.Profession.LIBRARIAN); break;
