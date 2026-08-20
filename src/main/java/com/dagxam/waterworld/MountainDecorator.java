@@ -5,12 +5,7 @@ import org.bukkit.World;
 
 import java.util.Random;
 
-/**
- * Большая центральная гора главного острова.
- *
- * Широкое основание плавно переходит в равнину, есть две боковые вершины,
- * каменные склоны и естественная снежная верхушка.
- */
+/** Небольшой естественный холм на главном острове. */
 public final class MountainDecorator {
 
     private final int seaLevel;
@@ -35,9 +30,9 @@ public final class MountainDecorator {
         this.seaLevel = seaLevel;
         this.centerX = centerX;
         this.centerZ = centerZ;
-        this.radius = Math.max(20, radius);
-        this.peakHeight = Math.max(seaLevel + 20, peakHeight);
-        this.snowLine = Math.max(seaLevel + 20, snowLine);
+        this.radius = Math.max(14, radius);
+        this.peakHeight = Math.max(seaLevel + 8, peakHeight);
+        this.snowLine = Math.max(peakHeight + 1, snowLine);
         this.secondaryPeaks = secondaryPeaks;
         this.oreAttempts = Math.max(1, oreAttempts);
     }
@@ -52,7 +47,6 @@ public final class MountainDecorator {
         int endX = Math.min(maxX, centerX + radius);
         int startZ = Math.max(minZ, centerZ - radius);
         int endZ = Math.min(maxZ, centerZ + radius);
-
         if (startX > endX || startZ > endZ) return;
 
         for (int x = startX; x <= endX; x++) {
@@ -62,105 +56,70 @@ public final class MountainDecorator {
                 double distance = Math.sqrt(dx * dx + dz * dz);
                 if (distance > radius) continue;
 
-                int targetY = getMountainHeight(x, z, distance);
                 int baseY = world.getHighestBlockYAt(x, z);
+                if (baseY <= seaLevel) continue;
+
+                int targetY = getMountainHeight(x, z, distance);
                 if (targetY <= baseY) continue;
 
-                // Цельный каменный массив — это важно и для руд, и для красивых склонов.
                 for (int y = baseY + 1; y <= targetY; y++) {
                     world.getBlockAt(x, y, z).setType(Material.STONE, false);
                 }
 
-                buildNaturalSurface(world, x, z, targetY, distance);
+                buildNaturalSurface(world, x, z, targetY);
             }
         }
 
-        // Поскольку гора создаётся после ChunkGenerator, руды в её новом камне
-        // тоже создаём здесь, чтобы гора не была пустой внутри.
+        // Руды в каменной части холма.
         generateOres(world, chunkX, chunkZ);
     }
 
     private int getMountainHeight(int x, int z, double distance) {
         double factor = Math.max(0.0D, 1.0D - distance / radius);
-
-        // Основной массив: широкий низ + заметно более крутая верхняя часть.
-        double main = Math.pow(factor, 1.62D)
-                * (peakHeight - seaLevel - 1);
+        // Очень плавное основание и мягкая вершина: это холм, а не гора.
+        double main = Math.pow(factor, 1.75D) * (peakHeight - seaLevel - 1);
 
         double secondary = 0.0D;
         if (secondaryPeaks) {
-            secondary += gaussian(x, z, centerX - 28, centerZ + 1, 24.0D, 17.0D);
-            secondary += gaussian(x, z, centerX + 27, centerZ - 3, 21.0D, 16.0D);
+            secondary += gaussian(x, z, centerX - 13, centerZ + 5, 5.0D, 13.0D);
+            secondary += gaussian(x, z, centerX + 15, centerZ - 5, 4.0D, 12.0D);
         }
 
-        double ridge =
-                Math.sin(x * 0.071D + z * 0.023D) * 2.0D
-                + Math.cos(z * 0.083D - x * 0.019D) * 1.5D;
+        double gentleNoise = Math.sin(x * 0.075D + z * 0.021D) * 1.0D
+                + Math.cos(z * 0.081D - x * 0.017D) * 0.8D;
 
-        int result = seaLevel + 1 + (int) Math.round(main + secondary + ridge);
-        return Math.max(seaLevel + 1, Math.min(peakHeight + 4, result));
+        return Math.max(
+                seaLevel + 1,
+                Math.min(peakHeight, seaLevel + 1 + (int) Math.round(main + secondary + gentleNoise))
+        );
     }
 
-    private double gaussian(
-            int x,
-            int z,
-            int peakX,
-            int peakZ,
-            double height,
-            double width
-    ) {
+    private double gaussian(int x, int z, int peakX, int peakZ, double height, double width) {
         double dx = x - peakX;
         double dz = z - peakZ;
-        double distanceSquared = dx * dx + dz * dz;
-        return height * Math.exp(-distanceSquared / (2.0D * width * width));
+        return height * Math.exp(-(dx * dx + dz * dz) / (2.0D * width * width));
     }
 
-    private void buildNaturalSurface(World world, int x, int z, int targetY, double distance) {
+    private void buildNaturalSurface(World world, int x, int z, int targetY) {
         int top = world.getHighestBlockYAt(x, z);
         if (top <= seaLevel) return;
 
-        double heightRatio = (double) (top - seaLevel)
-                / Math.max(1.0D, peakHeight - seaLevel);
-
+        // Весь сухой верхний слой — дерн. Снег оставляем только при реально
+        // заданной снеговой линии выше вершины холма.
         if (top >= snowLine) {
             world.getBlockAt(x, top, z).setType(Material.SNOW_BLOCK, false);
-
             if (world.getBlockAt(x, top + 1, z).isEmpty()) {
                 world.getBlockAt(x, top + 1, z).setType(Material.SNOW, false);
             }
-
-            if (heightRatio > 0.86D) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        if (dx == 0 && dz == 0) continue;
-                        int bx = x + dx;
-                        int bz = z + dz;
-                        int by = world.getHighestBlockYAt(bx, bz);
-                        if (by >= snowLine - 2 && world.getBlockAt(bx, by + 1, bz).isEmpty()) {
-                            world.getBlockAt(bx, by + 1, bz).setType(Material.SNOW, false);
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        // Нижняя часть остаётся зелёной, а на крутых местах открывается камень.
-        double steepness = distance / radius;
-        boolean exposedStone = heightRatio > 0.38D
-                && (Math.sin(x * 0.17D) + Math.cos(z * 0.13D)) > 0.55D;
-
-        if (exposedStone || steepness > 0.82D) {
-            world.getBlockAt(x, top, z).setType(Material.STONE, false);
         } else {
             world.getBlockAt(x, top, z).setType(Material.GRASS_BLOCK, false);
-            if (top > seaLevel + 2 && world.getBlockAt(x, top + 1, z).isEmpty()) {
+            if (world.getBlockAt(x, top + 1, z).isEmpty()
+                    && ((x * 31L + z * 17L) & 3L) == 0L) {
                 world.getBlockAt(x, top + 1, z).setType(Material.GRASS, false);
             }
         }
     }
 
-    /** Ванильноподобные руды внутри добавленной горы. */
     private void generateOres(World world, int chunkX, int chunkZ) {
         long seed = world.getSeed()
                 ^ ((long) chunkX * 341873128712L)
@@ -187,14 +146,11 @@ public final class MountainDecorator {
                 int bx = x + random.nextInt(5) - 2;
                 int by = y + random.nextInt(5) - 2;
                 int bz = z + random.nextInt(5) - 2;
-
                 if (by <= 0 || by >= top) continue;
                 Material current = world.getBlockAt(bx, by, bz).getType();
                 if (current != Material.STONE && current != Material.DEEPSLATE) continue;
-
                 world.getBlockAt(bx, by, bz).setType(current == Material.DEEPSLATE
-                        ? toDeepslateOre(ore)
-                        : ore, false);
+                        ? toDeepslateOre(ore) : ore, false);
             }
         }
     }
@@ -208,24 +164,20 @@ public final class MountainDecorator {
 
     private Material chooseOre(Random random, int y) {
         int roll = random.nextInt(10000);
-
         if (y <= 16) {
-            if (roll < 900) return Material.DIAMOND_ORE;
-            if (roll < 2500) return Material.REDSTONE_ORE;
-            if (roll < 3400) return Material.LAPIS_ORE;
+            if (roll < 700) return Material.DIAMOND_ORE;
+            if (roll < 2300) return Material.REDSTONE_ORE;
+            if (roll < 3300) return Material.LAPIS_ORE;
             if (roll < 4500) return Material.GOLD_ORE;
         }
-
         if (y <= 64) {
             if (roll < 4700) return Material.IRON_ORE;
             if (roll < 6500) return Material.COAL_ORE;
             if (roll < 7900) return Material.COPPER_ORE;
         }
-
         if (roll < 6200) return Material.COAL_ORE;
         if (roll < 9000) return Material.IRON_ORE;
         if (roll < 9700 && y <= 96) return Material.COPPER_ORE;
-
         return null;
     }
 
