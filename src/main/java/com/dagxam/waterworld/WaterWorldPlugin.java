@@ -38,6 +38,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 boolean secondaryPeaks = getConfig().getBoolean(
                         "island.mountain.secondary-peaks", true
                 );
+                int oreAttempts = getConfig().getInt("ores.attempts-per-chunk", 64);
 
                 mountain = new MountainDecorator(
                         seaLevel,
@@ -46,7 +47,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                         mountainRadius,
                         peakHeight,
                         snowLine,
-                        secondaryPeaks
+                        secondaryPeaks,
+                        oreAttempts
                 );
             }
         }
@@ -126,7 +128,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = event.getWorld();
         Chunk chunk = event.getChunk();
 
-        // Сначала формируем гору, затем траву/цветы/деревья поверх неё.
+        // Сначала создаём гору, затем оформляем её растительностью.
         if (mountain != null) {
             mountain.generate(world, chunk.getX(), chunk.getZ());
         }
