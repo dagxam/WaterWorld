@@ -17,6 +17,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private NaturalIslandDecorator decorator;
     private MountainDecorator mountain;
     private VillageDecorator village;
+    private MobDecorator mobs;
 
     @Override
     public void onEnable() {
@@ -51,14 +52,21 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                         getConfig().getInt("village.offset-z", 55)
                 );
             }
+
+            if (getConfig().getBoolean("animals.enabled", true)) {
+                int oceanRadius = getConfig().getInt("animals.ocean-radius", 280);
+                mobs = new MobDecorator(seaLevel, centerX, centerZ, radius, oceanRadius);
+            }
         }
 
         getServer().getPluginManager().registerEvents(this, this);
+        if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
         for (World world : getServer().getWorlds()) scheduleIslandSpawn(world);
+
         getLogger().info("WaterWorld успешно запущен.");
         getLogger().info("Главный остров: большая равнина, небольшой зелёный холм и плавный берег.");
         getLogger().info("Руды и ванильный спавн мобов включены.");
-        getLogger().info("Разные деревья и небольшая деревня включены.");
+        getLogger().info("Разные деревья, деревня и сбалансированная живность включены.");
     }
 
     @Override
@@ -111,6 +119,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
         if (decorator != null && isChunkNearMainIsland(chunk.getX(), chunk.getZ())) decorator.decorate(world, chunk.getX(), chunk.getZ());
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
+
+        if (mobs != null) {
+            // Сущности создаём следующим тиком, после полной генерации чанка.
+            getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
+        }
     }
 
     private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
