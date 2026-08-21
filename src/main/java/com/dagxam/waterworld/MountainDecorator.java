@@ -3,8 +3,6 @@ package com.dagxam.waterworld;
 import org.bukkit.Material;
 import org.bukkit.World;
 
-import java.util.Random;
-
 /** Небольшой естественный холм на главном острове. */
 public final class MountainDecorator {
 
@@ -15,7 +13,6 @@ public final class MountainDecorator {
     private final int peakHeight;
     private final int snowLine;
     private final boolean secondaryPeaks;
-    private final int oreAttempts;
 
     public MountainDecorator(
             int seaLevel,
@@ -24,8 +21,7 @@ public final class MountainDecorator {
             int radius,
             int peakHeight,
             int snowLine,
-            boolean secondaryPeaks,
-            int oreAttempts
+            boolean secondaryPeaks
     ) {
         this.seaLevel = seaLevel;
         this.centerX = centerX;
@@ -34,9 +30,13 @@ public final class MountainDecorator {
         this.peakHeight = Math.max(seaLevel + 8, peakHeight);
         this.snowLine = Math.max(peakHeight + 1, snowLine);
         this.secondaryPeaks = secondaryPeaks;
-        this.oreAttempts = Math.max(1, oreAttempts);
     }
 
+    /**
+     * Формирует только рельеф и поверхность холма.
+     * Руды здесь намеренно не генерируются: их полностью создаёт Ore-Plugin
+     * после формирования рельефа WaterWorld.
+     */
     public void generate(World world, int chunkX, int chunkZ) {
         int minX = chunkX * 16;
         int minZ = chunkZ * 16;
@@ -69,9 +69,6 @@ public final class MountainDecorator {
                 buildNaturalSurface(world, x, z, targetY);
             }
         }
-
-        // Руды в каменной части холма.
-        generateOres(world, chunkX, chunkZ);
     }
 
     private int getMountainHeight(int x, int z, double distance) {
@@ -117,80 +114,6 @@ public final class MountainDecorator {
                     && ((x * 31L + z * 17L) & 3L) == 0L) {
                 world.getBlockAt(x, top + 1, z).setType(Material.GRASS, false);
             }
-        }
-    }
-
-    private void generateOres(World world, int chunkX, int chunkZ) {
-        long seed = world.getSeed()
-                ^ ((long) chunkX * 341873128712L)
-                ^ ((long) chunkZ * 132897987541L)
-                ^ 0x510E527FADE682D1L;
-        Random random = new Random(seed);
-
-        for (int i = 0; i < oreAttempts; i++) {
-            int x = chunkX * 16 + random.nextInt(16);
-            int z = chunkZ * 16 + random.nextInt(16);
-            double dx = x - centerX;
-            double dz = z - centerZ;
-            if (dx * dx + dz * dz > (double) radius * radius) continue;
-
-            int top = world.getHighestBlockYAt(x, z);
-            if (top <= seaLevel + 5) continue;
-
-            int y = chooseOreY(random, top);
-            Material ore = chooseOre(random, y);
-            if (ore == null) continue;
-
-            int veinSize = 2 + random.nextInt(ore == Material.DIAMOND_ORE ? 3 : 7);
-            for (int v = 0; v < veinSize * 3; v++) {
-                int bx = x + random.nextInt(5) - 2;
-                int by = y + random.nextInt(5) - 2;
-                int bz = z + random.nextInt(5) - 2;
-                if (by <= 0 || by >= top) continue;
-                Material current = world.getBlockAt(bx, by, bz).getType();
-                if (current != Material.STONE && current != Material.DEEPSLATE) continue;
-                world.getBlockAt(bx, by, bz).setType(current == Material.DEEPSLATE
-                        ? toDeepslateOre(ore) : ore, false);
-            }
-        }
-    }
-
-    private int chooseOreY(Random random, int top) {
-        int roll = random.nextInt(100);
-        if (roll < 55) return 8 + random.nextInt(Math.max(1, Math.min(top - 8, 64)));
-        if (roll < 85) return 20 + random.nextInt(Math.max(1, Math.min(top - 20, 80)));
-        return 4 + random.nextInt(Math.max(1, Math.min(top - 4, 32)));
-    }
-
-    private Material chooseOre(Random random, int y) {
-        int roll = random.nextInt(10000);
-        if (y <= 16) {
-            if (roll < 700) return Material.DIAMOND_ORE;
-            if (roll < 2300) return Material.REDSTONE_ORE;
-            if (roll < 3300) return Material.LAPIS_ORE;
-            if (roll < 4500) return Material.GOLD_ORE;
-        }
-        if (y <= 64) {
-            if (roll < 4700) return Material.IRON_ORE;
-            if (roll < 6500) return Material.COAL_ORE;
-            if (roll < 7900) return Material.COPPER_ORE;
-        }
-        if (roll < 6200) return Material.COAL_ORE;
-        if (roll < 9000) return Material.IRON_ORE;
-        if (roll < 9700 && y <= 96) return Material.COPPER_ORE;
-        return null;
-    }
-
-    private Material toDeepslateOre(Material material) {
-        switch (material) {
-            case COAL_ORE: return Material.DEEPSLATE_COAL_ORE;
-            case IRON_ORE: return Material.DEEPSLATE_IRON_ORE;
-            case COPPER_ORE: return Material.DEEPSLATE_COPPER_ORE;
-            case GOLD_ORE: return Material.DEEPSLATE_GOLD_ORE;
-            case REDSTONE_ORE: return Material.DEEPSLATE_REDSTONE_ORE;
-            case LAPIS_ORE: return Material.DEEPSLATE_LAPIS_ORE;
-            case DIAMOND_ORE: return Material.DEEPSLATE_DIAMOND_ORE;
-            default: return material;
         }
     }
 }
