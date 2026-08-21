@@ -16,6 +16,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private WaterGenerator generator;
     private NaturalIslandDecorator decorator;
     private MountainDecorator mountain;
+    private CaveDecorator cave;
     private VillageDecorator village;
     private MobDecorator mobs;
 
@@ -39,34 +40,39 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 int snowLine = getConfig().getInt("island.mountain.snow-line", 120);
                 boolean secondaryPeaks = getConfig().getBoolean("island.mountain.secondary-peaks", false);
                 int oreAttempts = getConfig().getInt("ores.attempts-per-chunk", 64);
-                mountain = new MountainDecorator(
-                        seaLevel, centerX + offsetX, centerZ + offsetZ,
-                        mountainRadius, peakHeight, snowLine, secondaryPeaks, oreAttempts
-                );
+                int mountainX = centerX + offsetX;
+                int mountainZ = centerZ + offsetZ;
+                mountain = new MountainDecorator(seaLevel, mountainX, mountainZ,
+                        mountainRadius, peakHeight, snowLine, secondaryPeaks, oreAttempts);
+
+                if (getConfig().getBoolean("island.mountain.cave.enabled", true)) {
+                    cave = new CaveDecorator(mountainX, mountainZ, mountainRadius,
+                            seaLevel, peakHeight);
+                }
             }
 
             if (getConfig().getBoolean("village.enabled", true)) {
-                village = new VillageDecorator(
-                        centerX, centerZ, radius,
+                village = new VillageDecorator(centerX, centerZ, radius,
                         getConfig().getInt("village.offset-x", 0),
-                        getConfig().getInt("village.offset-z", 55)
-                );
+                        getConfig().getInt("village.offset-z", 55));
             }
 
             if (getConfig().getBoolean("animals.enabled", true)) {
                 int oceanRadius = getConfig().getInt("animals.ocean-radius", 280);
-                mobs = new MobDecorator(seaLevel, centerX, centerZ, radius, oceanRadius);
+                mobs = new MobDecorator(this, seaLevel, centerX, centerZ, radius, oceanRadius);
             }
         }
 
         getServer().getPluginManager().registerEvents(this, this);
-        if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
+        if (mobs != null) {
+            getServer().getPluginManager().registerEvents(mobs, this);
+            mobs.start();
+        }
         for (World world : getServer().getWorlds()) scheduleIslandSpawn(world);
 
         getLogger().info("WaterWorld успешно запущен.");
-        getLogger().info("Главный остров: большая равнина, небольшой зелёный холм и плавный берег.");
-        getLogger().info("Руды и ванильный спавн мобов включены.");
-        getLogger().info("Разные деревья, деревня и сбалансированная живность включены.");
+        getLogger().info("Остров оптимизирован: декорация работает только в нужных чанках.");
+        getLogger().info("В холме включена естественная тёмная пещера с ванильным спавном опасных мобов.");
     }
 
     @Override
@@ -76,7 +82,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
-    public void onWorldLoad(WorldLoadEvent event) { scheduleIslandSpawn(event.getWorld()); }
+    public void onWorldLoad(WorldLoadEvent event) {
+        if (mobs != null) mobs.initializeWorld(event.getWorld());
+        scheduleIslandSpawn(event.getWorld());
+    }
 
     private void scheduleIslandSpawn(World world) {
         if (!getConfig().getBoolean("island.enabled", true)) return;
@@ -117,13 +126,12 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = event.getWorld();
         Chunk chunk = event.getChunk();
         if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
-        if (decorator != null && isChunkNearMainIsland(chunk.getX(), chunk.getZ())) decorator.decorate(world, chunk.getX(), chunk.getZ());
-        if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
-
-        if (mobs != null) {
-            // Сущности создаём следующим тиком, после полной генерации чанка.
-            getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
+        if (cave != null) cave.generate(world, chunk.getX(), chunk.getZ());
+        if (decorator != null && isChunkNearMainIsland(chunk.getX(), chunk.getZ())) {
+            decorator.decorate(world, chunk.getX(), chunk.getZ());
         }
+        if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
+        if (mobs != null) getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
     }
 
     private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
