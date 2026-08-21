@@ -39,11 +39,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 int peakHeight = getConfig().getInt("island.mountain.peak-height", 92);
                 int snowLine = getConfig().getInt("island.mountain.snow-line", 120);
                 boolean secondaryPeaks = getConfig().getBoolean("island.mountain.secondary-peaks", false);
-                int oreAttempts = getConfig().getInt("ores.attempts-per-chunk", 64);
                 int mountainX = centerX + offsetX;
                 int mountainZ = centerZ + offsetZ;
                 mountain = new MountainDecorator(seaLevel, mountainX, mountainZ,
-                        mountainRadius, peakHeight, snowLine, secondaryPeaks, oreAttempts);
+                        mountainRadius, peakHeight, snowLine, secondaryPeaks);
 
                 if (getConfig().getBoolean("island.mountain.cave.enabled", true)) {
                     cave = new CaveDecorator(mountainX, mountainZ, mountainRadius,
@@ -73,6 +72,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         getLogger().info("WaterWorld успешно запущен.");
         getLogger().info("Остров оптимизирован: декорация работает только в нужных чанках.");
         getLogger().info("В холме включена естественная тёмная пещера с ванильным спавном опасных мобов.");
+        getLogger().info("Собственная генерация руд отключена: руды должен генерировать Ore-Plugin.");
     }
 
     @Override
