@@ -33,7 +33,7 @@ public final class CaveDecorator {
 
         int entranceX = centerX + radius / 2;
         int entranceZ = centerZ + radius / 3;
-        int entranceY = Math.min(maxHeight - 2, world.getHighestBlockYAt(entranceX, entranceZ));
+        int entranceY = estimateHillSurfaceY(entranceX, entranceZ);
         carveTunnel(world, minX, maxX, minZ, maxZ,
                 entranceX, entranceY - 1, entranceZ,
                 centerX + 5, seaLevel + 15, centerZ + 4, 2.1);
@@ -47,6 +47,14 @@ public final class CaveDecorator {
                 centerX - radius / 3, seaLevel + 10, centerZ - radius / 4, 4.2, 3.0, 4.2);
         carveEllipsoid(world, minX, maxX, minZ, maxZ,
                 centerX + radius / 4, seaLevel + 19, centerZ - radius / 3, 3.8, 2.8, 3.8);
+    }
+
+    private int estimateHillSurfaceY(int x, int z) {
+        double dx = x - centerX, dz = z - centerZ;
+        double distance = Math.sqrt(dx * dx + dz * dz);
+        double factor = Math.max(0.0D, 1.0D - distance / radius);
+        double height = Math.pow(factor, 1.75D) * (maxHeight - seaLevel - 1);
+        return seaLevel + 1 + (int) Math.round(height);
     }
 
     private void carveTunnel(World world, int minX, int maxX, int minZ, int maxZ,
