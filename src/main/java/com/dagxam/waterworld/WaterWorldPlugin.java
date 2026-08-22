@@ -11,6 +11,8 @@ import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.List;
+
 /** Главный класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private WaterGenerator generator;
@@ -19,134 +21,37 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private CaveDecorator cave;
     private VillageDecorator village;
     private MobDecorator mobs;
+    private IslandLayout islandLayout;
 
-    @Override
-    public void onEnable() {
+    @Override public void onEnable() {
         saveDefaultConfig();
+        islandLayout = new IslandLayout(getConfig());
         generator = new WaterGenerator(getConfig());
-
         if (getConfig().getBoolean("island.enabled", true)) {
-            int seaLevel = getConfig().getInt("sea-level", 63);
-            int centerX = getConfig().getInt("island.center-x", 0);
-            int centerZ = getConfig().getInt("island.center-z", 0);
-            int radius = getConfig().getInt("island.radius", 100);
-            decorator = new NaturalIslandDecorator(seaLevel, centerX, centerZ, radius);
-
-            if (getConfig().getBoolean("island.mountain.enabled", true)) {
-                int offsetX = getConfig().getInt("island.mountain.offset-x", 0);
-                int offsetZ = getConfig().getInt("island.mountain.offset-z", -22);
-                int mountainRadius = getConfig().getInt("island.mountain.radius", 38);
-                int peakHeight = getConfig().getInt("island.mountain.peak-height", 92);
-                int snowLine = getConfig().getInt("island.mountain.snow-line", 120);
-                boolean secondaryPeaks = getConfig().getBoolean("island.mountain.secondary-peaks", false);
-                int mountainX = centerX + offsetX;
-                int mountainZ = centerZ + offsetZ;
-                mountain = new MountainDecorator(seaLevel, mountainX, mountainZ,
-                        mountainRadius, peakHeight, snowLine, secondaryPeaks);
-
-                if (getConfig().getBoolean("island.mountain.cave.enabled", true)) {
-                    cave = new CaveDecorator(mountainX, mountainZ, mountainRadius,
-                            seaLevel, peakHeight);
-                }
+            int sea = getConfig().getInt("sea-level",63), cx=getConfig().getInt("island.center-x",0), cz=getConfig().getInt("island.center-z",0), radius=getConfig().getInt("island.radius",100);
+            decorator = new NaturalIslandDecorator(sea,cx,cz,radius);
+            if(getConfig().getBoolean("island.mountain.enabled",true)){
+                int mx=cx+getConfig().getInt("island.mountain.offset-x",0), mz=cz+getConfig().getInt("island.mountain.offset-z",-22), mr=getConfig().getInt("island.mountain.radius",38), peak=getConfig().getInt("island.mountain.peak-height",92);
+                mountain=new MountainDecorator(sea,mx,mz,mr,peak,getConfig().getInt("island.mountain.snow-line",120),getConfig().getBoolean("island.mountain.secondary-peaks",false));
+                if(getConfig().getBoolean("island.mountain.cave.enabled",true)) cave=new CaveDecorator(mx,mz,mr,sea,peak);
             }
-
-            if (getConfig().getBoolean("village.enabled", true)) {
-                village = new VillageDecorator(centerX, centerZ, radius,
-                        getConfig().getInt("village.offset-x", 0),
-                        getConfig().getInt("village.offset-z", 55));
-            }
-
-            if (getConfig().getBoolean("animals.enabled", true)) {
-                int oceanRadius = getConfig().getInt("animals.ocean-radius", 280);
-                mobs = new MobDecorator(this, seaLevel, centerX, centerZ, radius, oceanRadius);
-            }
+            if(getConfig().getBoolean("village.enabled",true)) village=new VillageDecorator(cx,cz,radius,getConfig().getInt("village.offset-x",0),getConfig().getInt("village.offset-z",55));
+            if(getConfig().getBoolean("animals.enabled",true)) mobs=new MobDecorator(this,sea,cx,cz,radius,getConfig().getInt("animals.ocean-radius",280));
         }
-
-        getServer().getPluginManager().registerEvents(this, this);
-        if (mobs != null) {
-            getServer().getPluginManager().registerEvents(mobs, this);
-            mobs.start();
-        }
-        for (World world : getServer().getWorlds()) scheduleIslandSpawn(world);
-
-        getLogger().info("WaterWorld успешно запущен.");
-        getLogger().info("Остров оптимизирован: декорация работает только в нужных чанках.");
-        getLogger().info("В холме включена естественная тёмная пещера с ванильным спавном опасных мобов.");
-        getLogger().info("Собственная генерация руд отключена: руды должен генерировать Ore-Plugin.");
+        getServer().getPluginManager().registerEvents(this,this);
+        if(mobs!=null){getServer().getPluginManager().registerEvents(mobs,this);mobs.start();}
+        for(World world:getServer().getWorlds()) scheduleIslandSpawn(world);
+        getLogger().info("WaterWorld запущен: дополнительные острова, растительность и животные включены.");
     }
-
-    @Override
-    public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
-        if (generator == null) generator = new WaterGenerator(getConfig());
-        return generator;
-    }
-
-    @EventHandler
-    public void onWorldLoad(WorldLoadEvent event) {
-        if (mobs != null) mobs.initializeWorld(event.getWorld());
-        scheduleIslandSpawn(event.getWorld());
-    }
-
-    private void scheduleIslandSpawn(World world) {
-        if (!getConfig().getBoolean("island.enabled", true)) return;
-        getServer().getScheduler().runTask(this, () -> setIslandSpawn(world));
-    }
-
-    private void setIslandSpawn(World world) {
-        int cx = getConfig().getInt("island.center-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 100);
-        int search = Math.min(16, Math.max(4, radius / 5));
-        world.getChunkAt(cx >> 4, cz >> 4).load();
-        Location safe = findSafeSpawn(world, cx, cz, search);
-        if (safe != null) world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
-        else getLogger().warning("Не удалось найти безопасную точку spawn на острове.");
-    }
-
-    private Location findSafeSpawn(World world, int cx, int cz, int radius) {
-        Location best = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                int x = cx + dx, z = cz + dz, y = world.getHighestBlockYAt(x, z);
-                if (world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
-                if (!world.getBlockAt(x, y + 1, z).isEmpty() || !world.getBlockAt(x, y + 2, z).isEmpty()) continue;
-                double d = (double) dx * dx + (double) dz * dz;
-                if (d < bestDistance) {
-                    bestDistance = d;
-                    best = new Location(world, x + .5D, y + 1, z + .5D);
-                }
-            }
-        }
-        return best;
-    }
-
-    @EventHandler
-    public void onChunkPopulate(ChunkPopulateEvent event) {
-        World world = event.getWorld();
-        Chunk chunk = event.getChunk();
-        if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
-        if (cave != null) cave.generate(world, chunk.getX(), chunk.getZ());
-        if (decorator != null && isChunkNearMainIsland(chunk.getX(), chunk.getZ())) {
-            decorator.decorate(world, chunk.getX(), chunk.getZ());
-        }
-        if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
-        if (mobs != null) getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
-    }
-
-    private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
-        int cx = getConfig().getInt("island.center-x", 0) + getConfig().getInt("village.offset-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0) + getConfig().getInt("village.offset-z", 55);
-        return chunkX == (cx >> 4) && chunkZ == (cz >> 4);
-    }
-
-    private boolean isChunkNearMainIsland(int chunkX, int chunkZ) {
-        int cx = getConfig().getInt("island.center-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 100);
-        double x = chunkX * 16 + 8, z = chunkZ * 16 + 8;
-        double dx = x - cx, dz = z - cz;
-        int check = radius + 16;
-        return dx * dx + dz * dz <= (double) check * check;
-    }
+    @Override public ChunkGenerator getDefaultWorldGenerator(String worldName,String id){if(generator==null)generator=new WaterGenerator(getConfig());return generator;}
+    @EventHandler public void onWorldLoad(WorldLoadEvent e){if(mobs!=null)mobs.initializeWorld(e.getWorld());scheduleIslandSpawn(e.getWorld());}
+    private void scheduleIslandSpawn(World w){if(getConfig().getBoolean("island.enabled",true))getServer().getScheduler().runTask(this,()->setIslandSpawn(w));}
+    private void setIslandSpawn(World w){int cx=getConfig().getInt("island.center-x",0),cz=getConfig().getInt("island.center-z",0),r=getConfig().getInt("island.radius",100);w.getChunkAt(cx>>4,cz>>4).load();Location safe=findSafeSpawn(w,cx,cz,Math.min(16,Math.max(4,r/5)));if(safe!=null)w.setSpawnLocation(safe.getBlockX(),safe.getBlockY(),safe.getBlockZ());}
+    private Location findSafeSpawn(World w,int cx,int cz,int r){Location best=null;double bd=Double.MAX_VALUE;for(int dx=-r;dx<=r;dx++)for(int dz=-r;dz<=r;dz++){int x=cx+dx,z=cz+dz,y=w.getHighestBlockYAt(x,z);if(w.getBlockAt(x,y,z).getType()!=Material.GRASS_BLOCK||!w.getBlockAt(x,y+1,z).isEmpty()||!w.getBlockAt(x,y+2,z).isEmpty())continue;double d=(double)dx*dx+(double)dz*dz;if(d<bd){bd=d;best=new Location(w,x+.5D,y+1,z+.5D);}}return best;}
+    @EventHandler public void onChunkPopulate(ChunkPopulateEvent e){World w=e.getWorld();Chunk c=e.getChunk();int x=c.getX()*16+8,z=c.getZ()*16+8;
+        if(mountain!=null)mountain.generate(w,c.getX(),c.getZ()); if(cave!=null)cave.generate(w,c.getX(),c.getZ());
+        if(decorator!=null){List<IslandLayout.Island> islands=islandLayout.get(w.getSeed());for(IslandLayout.Island island:islands)if(near(c.getX(),c.getZ(),island.x(),island.z(),island.radius()+16)){new NaturalIslandDecorator(getConfig().getInt("sea-level",63),island.x(),island.z(),island.radius()).decorate(w,c.getX(),c.getZ());break;}}
+        if(village!=null&&isVillageTriggerChunk(c.getX(),c.getZ()))village.generate(w); if(mobs!=null)getServer().getScheduler().runTask(this,()->mobs.populate(c));}
+    private boolean near(int chunkX,int chunkZ,int cx,int cz,int r){double x=chunkX*16+8-cx,z=chunkZ*16+8-cz;return x*x+z*z<=(double)r*r;}
+    private boolean isVillageTriggerChunk(int chunkX,int chunkZ){int cx=getConfig().getInt("island.center-x",0)+getConfig().getInt("village.offset-x",0),cz=getConfig().getInt("island.center-z",0)+getConfig().getInt("village.offset-z",55);return chunkX==(cx>>4)&&chunkZ==(cz>>4);}
 }
