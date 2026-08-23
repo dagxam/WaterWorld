@@ -12,6 +12,7 @@ import org.bukkit.event.world.ChunkPopulateEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 /** Главный класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
@@ -22,6 +23,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private VillageDecorator village;
     private MobDecorator mobs;
     private String waterWorldName;
+    private BukkitTask timeCycleTask;
 
     @Override
     public void onEnable() {
@@ -56,14 +58,19 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = createOrLoadWaterWorld();
         if (mobs != null) { mobs.initializeWorld(world); mobs.start(); }
         scheduleIslandSpawn(world);
+        startCustomTimeCycle(world);
         getLogger().info("WaterWorld успешно запущен. Мир: " + waterWorldName);
+    }
+
+    @Override
+    public void onDisable() {
+        if (timeCycleTask != null) timeCycleTask.cancel();
     }
 
     private World createOrLoadWaterWorld() {
         World existing = Bukkit.getWorld(waterWorldName);
         if (existing != null) return existing;
         WorldCreator creator = new WorldCreator(waterWorldName);
-        // WorldCreator ожидает ChunkGenerator, поэтому передаём сам генератор, а не JavaPlugin.
         creator.generator(generator);
         World world = creator.createWorld();
         if (world == null) throw new IllegalStateException("Не удалось создать мир WaterWorld: " + waterWorldName);
@@ -81,6 +88,35 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (!event.getWorld().getName().equals(waterWorldName)) return;
         if (mobs != null) mobs.initializeWorld(event.getWorld());
         scheduleIslandSpawn(event.getWorld());
+    }
+
+    private void startCustomTimeCycle(World world) {
+        if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
+        int daySeconds = getConfig().getInt("time-cycle.day-duration-seconds", 600);
+        int nightSeconds = getConfig().getInt("time-cycle.night-duration-seconds", 600);
+        if (daySeconds <= 0 || nightSeconds <= 0) {
+            getLogger().info("Пользовательский цикл времени отключён: используется стандартная скорость Minecraft.");
+            return;
+        }
+
+        long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
+        double dayTicksPerServerTick = 12000.0D / (daySeconds * 20.0D);
+        double nightTicksPerServerTick = 12000.0D / (nightSeconds * 20.0D);
+        final double[] remainder = {0.0D};
+
+        world.setGameRuleValue("doDaylightCycle", "false");
+        timeCycleTask = getServer().getScheduler().runTaskTimer(this, () -> {
+            if (!world.isChunkLoaded(0, 0)) return;
+            long current = Math.floorMod(world.getTime(), 24000L);
+            double speed = current < 12000L ? dayTicksPerServerTick : nightTicksPerServerTick;
+            remainder[0] += speed * interval;
+            long advance = (long) remainder[0];
+            if (advance <= 0L) return;
+            remainder[0] -= advance;
+            world.setTime((current + advance) % 24000L);
+        }, interval, interval);
+
+        getLogger().info("Настроен цикл времени: день " + daySeconds + " сек., ночь " + nightSeconds + " сек.");
     }
 
     private void scheduleIslandSpawn(World world) {
