@@ -47,19 +47,31 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                         getConfig().getBoolean("island.mountain.secondary-peaks", false));
                 if (getConfig().getBoolean("island.mountain.cave.enabled", true)) cave = new CaveDecorator(mx, mz, mr, seaLevel, peak);
             }
-            if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(centerX, centerZ, radius,
-                    getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
-            if (getConfig().getBoolean("animals.enabled", true)) mobs = new MobDecorator(this, seaLevel, centerX, centerZ, radius,
-                    getConfig().getInt("animals.ocean-radius", 280));
+            if (getConfig().getBoolean("village.enabled", true)) {
+                village = new VillageDecorator(centerX, centerZ, radius,
+                        getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+            }
+            if (getConfig().getBoolean("animals.enabled", true)) {
+                mobs = new MobDecorator(this, seaLevel, centerX, centerZ, radius,
+                        getConfig().getInt("animals.ocean-radius", 280));
+            }
         }
 
         getServer().getPluginManager().registerEvents(this, this);
         if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
+
         World world = createOrLoadWaterWorld();
-        if (mobs != null) { mobs.initializeWorld(world); mobs.start(); }
-        scheduleIslandSpawn(world);
+        // Сразу генерируем центральные чанки. Это исключает появление игрока в пустом океане
+        // до первой естественной генерации чанков.
+        generateSpawnIslandChunks(world);
+
+        if (mobs != null) {
+            mobs.initializeWorld(world);
+            mobs.start();
+        }
+        setIslandSpawn(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld успешно запущен. Мир: " + waterWorldName);
+        getLogger().info("WaterWorld успешно запущен. Мир: " + waterWorldName + ", генератор: " + world.getGenerator());
     }
 
     @Override
@@ -77,6 +89,21 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         return world;
     }
 
+    private void generateSpawnIslandChunks(World world) {
+        int radius = Math.max(16, getConfig().getInt("island.radius", 100));
+        int cx = getConfig().getInt("island.center-x", 0);
+        int cz = getConfig().getInt("island.center-z", 0);
+        int chunkRadius = Math.max(1, (radius + 31) / 16);
+        int centerChunkX = Math.floorDiv(cx, 16);
+        int centerChunkZ = Math.floorDiv(cz, 16);
+
+        for (int chunkX = centerChunkX - chunkRadius; chunkX <= centerChunkX + chunkRadius; chunkX++) {
+            for (int chunkZ = centerChunkZ - chunkRadius; chunkZ <= centerChunkZ + chunkRadius; chunkZ++) {
+                world.getChunkAt(chunkX, chunkZ).load(true);
+            }
+        }
+    }
+
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
         if (generator == null) generator = new WaterGenerator(getConfig());
@@ -87,59 +114,60 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     public void onWorldLoad(WorldLoadEvent event) {
         if (!event.getWorld().getName().equals(waterWorldName)) return;
         if (mobs != null) mobs.initializeWorld(event.getWorld());
-        scheduleIslandSpawn(event.getWorld());
     }
 
     private void startCustomTimeCycle(World world) {
         if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
         int daySeconds = getConfig().getInt("time-cycle.day-duration-seconds", 600);
         int nightSeconds = getConfig().getInt("time-cycle.night-duration-seconds", 600);
-        if (daySeconds <= 0 || nightSeconds <= 0) {
-            getLogger().info("Пользовательский цикл времени отключён: используется стандартная скорость Minecraft.");
-            return;
-        }
+        if (daySeconds <= 0 || nightSeconds <= 0) return;
 
         long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
-        double dayTicksPerServerTick = 12000.0D / (daySeconds * 20.0D);
-        double nightTicksPerServerTick = 12000.0D / (nightSeconds * 20.0D);
+        double daySpeed = 12000.0D / (daySeconds * 20.0D);
+        double nightSpeed = 12000.0D / (nightSeconds * 20.0D);
         final double[] remainder = {0.0D};
-
         world.setGameRuleValue("doDaylightCycle", "false");
+
         timeCycleTask = getServer().getScheduler().runTaskTimer(this, () -> {
-            if (!world.isChunkLoaded(0, 0)) return;
             long current = Math.floorMod(world.getTime(), 24000L);
-            double speed = current < 12000L ? dayTicksPerServerTick : nightTicksPerServerTick;
+            double speed = current < 12000L ? daySpeed : nightSpeed;
             remainder[0] += speed * interval;
             long advance = (long) remainder[0];
             if (advance <= 0L) return;
             remainder[0] -= advance;
             world.setTime((current + advance) % 24000L);
         }, interval, interval);
-
-        getLogger().info("Настроен цикл времени: день " + daySeconds + " сек., ночь " + nightSeconds + " сек.");
-    }
-
-    private void scheduleIslandSpawn(World world) {
-        if (getConfig().getBoolean("island.enabled", true)) getServer().getScheduler().runTask(this, () -> setIslandSpawn(world));
     }
 
     private void setIslandSpawn(World world) {
-        int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 100), search = Math.min(16, Math.max(4, radius / 5));
-        world.getChunkAt(cx >> 4, cz >> 4).load();
-        Location safe = findSafeSpawn(world, cx, cz, search);
-        if (safe != null) world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
-        else getLogger().warning("Не удалось найти безопасную точку появления на острове.");
+        int cx = getConfig().getInt("island.center-x", 0);
+        int cz = getConfig().getInt("island.center-z", 0);
+        int radius = Math.min(32, Math.max(8, getConfig().getInt("island.radius", 100) / 4));
+        Location safe = findSafeSpawn(world, cx, cz, radius);
+        if (safe != null) {
+            world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
+            getLogger().info("Точка появления установлена на острове: " + safe.getBlockX() + ", " + safe.getBlockY() + ", " + safe.getBlockZ());
+        } else {
+            getLogger().severe("Остров не найден в центральных чанках. Если мир был создан старой версией плагина, удалите только папку мира '" + waterWorldName + "' и запустите сервер снова.");
+        }
     }
 
     private Location findSafeSpawn(World world, int cx, int cz, int radius) {
-        Location best = null; double bestDistance = Double.MAX_VALUE;
-        for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
-            int x = cx + dx, z = cz + dz, y = world.getHighestBlockYAt(x, z);
-            if (world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
-            if (!world.getBlockAt(x, y + 1, z).isEmpty() || !world.getBlockAt(x, y + 2, z).isEmpty()) continue;
-            double d = (double) dx * dx + (double) dz * dz;
-            if (d < bestDistance) { bestDistance = d; best = new Location(world, x + .5D, y + 1, z + .5D); }
+        Location best = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int x = cx + dx;
+                int z = cz + dz;
+                int y = world.getHighestBlockYAt(x, z);
+                if (world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
+                if (!world.getBlockAt(x, y + 1, z).isEmpty() || !world.getBlockAt(x, y + 2, z).isEmpty()) continue;
+                double d = (double) dx * dx + (double) dz * dz;
+                if (d < bestDistance) {
+                    bestDistance = d;
+                    best = new Location(world, x + 0.5D, y + 1, z + 0.5D);
+                }
+            }
         }
         return best;
     }
@@ -159,15 +187,17 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
         int cx = getConfig().getInt("island.center-x", 0) + getConfig().getInt("village.offset-x", 0);
         int cz = getConfig().getInt("island.center-z", 0) + getConfig().getInt("village.offset-z", 55);
-        return chunkX == (cx >> 4) && chunkZ == (cz >> 4);
+        return chunkX == Math.floorDiv(cx, 16) && chunkZ == Math.floorDiv(cz, 16);
     }
 
     private boolean isChunkNearAnyIsland(int chunkX, int chunkZ, long seed) {
         IslandLayout layout = new IslandLayout(getConfig());
-        double x = chunkX * 16 + 8D, z = chunkZ * 16 + 8D;
+        double x = chunkX * 16 + 8.0D;
+        double z = chunkZ * 16 + 8.0D;
         for (IslandLayout.Island island : layout.get(seed)) {
             int check = island.radius() + Math.max(20, island.radius() / 3) + 16;
-            double dx = x - island.x(), dz = z - island.z();
+            double dx = x - island.x();
+            double dz = z - island.z();
             if (dx * dx + dz * dz <= (double) check * check) return true;
         }
         return false;
