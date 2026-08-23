@@ -5,7 +5,6 @@ import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.WorldCreator;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkPopulateEvent;
@@ -14,7 +13,7 @@ import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
-/** Главный класс WaterWorld. */
+/** Главный класс WaterWorld. Генератор применяется к основному миру сервера. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private WaterGenerator generator;
     private NaturalIslandDecorator decorator;
@@ -26,9 +25,15 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private BukkitTask timeCycleTask;
 
     @Override
-    public void onEnable() {
+    public void onLoad() {
+        // На STARTUP конфигурация должна быть доступна ещё до первой генерации чанков.
         saveDefaultConfig();
         generator = new WaterGenerator(getConfig());
+    }
+
+    @Override
+    public void onEnable() {
+        if (generator == null) generator = new WaterGenerator(getConfig());
         waterWorldName = getConfig().getString("world.name", "waterworld");
         int seaLevel = getConfig().getInt("sea-level", 63);
         int centerX = getConfig().getInt("island.center-x", 0);
@@ -45,7 +50,9 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 mountain = new MountainDecorator(seaLevel, mx, mz, mr, peak,
                         getConfig().getInt("island.mountain.snow-line", 120),
                         getConfig().getBoolean("island.mountain.secondary-peaks", false));
-                if (getConfig().getBoolean("island.mountain.cave.enabled", true)) cave = new CaveDecorator(mx, mz, mr, seaLevel, peak);
+                if (getConfig().getBoolean("island.mountain.cave.enabled", true)) {
+                    cave = new CaveDecorator(mx, mz, mr, seaLevel, peak);
+                }
             }
             if (getConfig().getBoolean("village.enabled", true)) {
                 village = new VillageDecorator(centerX, centerZ, radius,
@@ -60,18 +67,19 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
 
-        World world = createOrLoadWaterWorld();
-        // Сразу генерируем центральные чанки. Это исключает появление игрока в пустом океане
-        // до первой естественной генерации чанков.
-        generateSpawnIslandChunks(world);
+        // Никакой второй мир больше не создаём. Берём уже созданный основной мир сервера.
+        World world = getPrimaryWorld();
+        waterWorldName = world.getName();
 
+        generateSpawnIslandChunks(world);
         if (mobs != null) {
             mobs.initializeWorld(world);
             mobs.start();
         }
         setIslandSpawn(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld успешно запущен. Мир: " + waterWorldName + ", генератор: " + world.getGenerator());
+        getLogger().info("WaterWorld успешно запущен. Основной мир: " + world.getName()
+                + ", генератор: " + world.getGenerator());
     }
 
     @Override
@@ -79,13 +87,9 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (timeCycleTask != null) timeCycleTask.cancel();
     }
 
-    private World createOrLoadWaterWorld() {
-        World existing = Bukkit.getWorld(waterWorldName);
-        if (existing != null) return existing;
-        WorldCreator creator = new WorldCreator(waterWorldName);
-        creator.generator(generator);
-        World world = creator.createWorld();
-        if (world == null) throw new IllegalStateException("Не удалось создать мир WaterWorld: " + waterWorldName);
+    private World getPrimaryWorld() {
+        World world = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
+        if (world == null) throw new IllegalStateException("Основной мир сервера не найден.");
         return world;
     }
 
@@ -106,6 +110,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
+        // Вызывается Paper/Bukkit во время создания основного мира.
+        // Имя level-name может быть любым: переименовывать его для работы WaterWorld не требуется.
         if (generator == null) generator = new WaterGenerator(getConfig());
         return generator;
     }
@@ -148,7 +154,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             world.setSpawnLocation(safe.getBlockX(), safe.getBlockY(), safe.getBlockZ());
             getLogger().info("Точка появления установлена на острове: " + safe.getBlockX() + ", " + safe.getBlockY() + ", " + safe.getBlockZ());
         } else {
-            getLogger().severe("Остров не найден в центральных чанках. Если мир был создан старой версией плагина, удалите только папку мира '" + waterWorldName + "' и запустите сервер снова.");
+            getLogger().severe("Остров не найден в центральных чанках. Удалите старую папку основного мира и запустите сервер снова.");
         }
     }
 
@@ -179,7 +185,9 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Chunk chunk = event.getChunk();
         if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
         if (cave != null) cave.generate(world, chunk.getX(), chunk.getZ());
-        if (decorator != null && isChunkNearAnyIsland(chunk.getX(), chunk.getZ(), world.getSeed())) decorator.decorate(world, chunk.getX(), chunk.getZ());
+        if (decorator != null && isChunkNearAnyIsland(chunk.getX(), chunk.getZ(), world.getSeed())) {
+            decorator.decorate(world, chunk.getX(), chunk.getZ());
+        }
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
         if (mobs != null) getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
     }
