@@ -81,10 +81,7 @@ public final class WaterGenerator extends ChunkGenerator {
         double bestDistance = Double.MAX_VALUE;
         for (IslandLayout.Island island : islands) {
             double d = distance(x, z, island.x(), island.z());
-            if (d < bestDistance) {
-                bestDistance = d;
-                best = island;
-            }
+            if (d < bestDistance) { bestDistance = d; best = island; }
         }
         return best;
     }
@@ -94,8 +91,7 @@ public final class WaterGenerator extends ChunkGenerator {
     }
 
     private int getOceanFloor(WorldInfo info, int x, int z) {
-        return clamp(oceanBaseHeight + (int) Math.round(terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude),
-                info.getMinHeight() + 2, seaLevel - 1);
+        return clamp(oceanBaseHeight + (int) Math.round(terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude), info.getMinHeight() + 2, seaLevel - 1);
     }
 
     private void setOceanTerrain(ChunkData data, int lx, int lz, int x, int z, int y, int floor) {
@@ -109,38 +105,24 @@ public final class WaterGenerator extends ChunkGenerator {
     }
 
     private void setIslandTerrain(ChunkData data, int lx, int lz, int x, int z, int y, int surface) {
-        if (y > surface) {
-            data.setBlock(lx, y, lz, y <= seaLevel ? Material.WATER : Material.AIR);
-            return;
-        }
-        if (y <= 0) {
-            data.setBlock(lx, y, lz, Material.DEEPSLATE);
-            return;
-        }
-        if (surface <= seaLevel) {
-            data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
-            return;
-        }
+        if (y > surface) { data.setBlock(lx, y, lz, y <= seaLevel ? Material.WATER : Material.AIR); return; }
+        if (y <= 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
+        if (surface <= seaLevel) { data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND); return; }
         data.setBlock(lx, y, lz, y < surface - 5 ? Material.STONE : y < surface - 1 ? Material.DIRT : Material.GRASS_BLOCK);
     }
 
-    private boolean isCave(int x, int y, int z) {
-        return caveGen.noise(x, y, z, 0.5D, 0.5D, true) > caveThreshold;
-    }
+    private boolean isCave(int x, int y, int z) { return caveGen.noise(x, y, z, 0.5D, 0.5D, true) > caveThreshold; }
 
-    /** Плавный переход: центр острова выше моря, край постепенно опускается до дна. */
     private int getIslandSurface(int x, int z, double distance, int radius) {
         int slopeRadius = getSlopeRadius(radius);
         double ocean = getLocalOceanHeight(x, z);
         if (distance >= slopeRadius) return (int) Math.round(ocean);
-
         if (distance <= radius) {
             double f = 1.0D - distance / radius;
             double noise = islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation;
             double land = seaLevel + 2.0D + Math.pow(Math.max(0.0D, f), 1.25D) * islandHeight + noise;
             return clamp((int) Math.round(land), seaLevel + 1, seaLevel + islandHeight + 3);
         }
-
         double t = (distance - radius) / (double) (slopeRadius - radius);
         t = t * t * (3.0D - 2.0D * t);
         double edge = seaLevel + 1.0D;
@@ -151,40 +133,25 @@ public final class WaterGenerator extends ChunkGenerator {
         return clampDouble(oceanBaseHeight + terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude, 24.0D, seaLevel - 1.0D);
     }
 
-    private static double distance(int x, int z, int cx, int cz) {
-        double dx = x - cx, dz = z - cz;
-        return Math.sqrt(dx * dx + dz * dz);
-    }
-
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private static double clampDouble(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
-    }
+    private static double distance(int x, int z, int cx, int cz) { double dx = x - cx, dz = z - cz; return Math.sqrt(dx * dx + dz * dz); }
+    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+    private static double clampDouble(double value, double min, double max) { return Math.max(min, Math.min(max, value)); }
 
     @Override
     public BiomeProvider getDefaultBiomeProvider(WorldInfo info) {
         return new BiomeProvider() {
-            @Override
-            public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
-                for (IslandLayout.Island island : layout.get(worldInfo.getSeed())) {
-                    if (distance(x, z, island.x(), island.z()) <= island.radius()) return Biome.PLAINS;
-                }
+            @Override public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
+                for (IslandLayout.Island island : layout.get(worldInfo.getSeed())) if (distance(x, z, island.x(), island.z()) <= island.radius()) return Biome.PLAINS;
                 return Biome.WARM_OCEAN;
             }
-
-            @Override
-            public List<Biome> getBiomes(WorldInfo worldInfo) {
-                return List.of(Biome.WARM_OCEAN, Biome.PLAINS);
-            }
+            @Override public List<Biome> getBiomes(WorldInfo worldInfo) { return List.of(Biome.WARM_OCEAN, Biome.PLAINS); }
         };
     }
 
-    @Override public boolean shouldGenerateDecorations() { return true; }
-    @Override public boolean shouldGenerateCaves() { return false; }
-    @Override public boolean shouldGenerateNoise() { return false; }
+    /** Обязательно true: иначе Paper пропускает generateNoise и создаёт обычный ванильный рельеф. */
+    @Override public boolean shouldGenerateNoise() { return true; }
     @Override public boolean shouldGenerateSurface() { return false; }
+    @Override public boolean shouldGenerateCaves() { return false; }
+    @Override public boolean shouldGenerateDecorations() { return true; }
     @Override public boolean shouldGenerateMobs() { return true; }
 }
