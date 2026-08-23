@@ -6,11 +6,10 @@
 
     <groupId>com.dagxam</groupId>
     <artifactId>WaterWorld</artifactId>
-    <version>2.0</version>
+    <version>2.3</version>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -22,10 +21,16 @@
     </repositories>
 
     <dependencies>
+        <!--
+            Bukkit/Spigot API используется как единственная compile-time основа.
+            В коде WaterWorld не допускаются импорты Paper- или Purpur-специфичных API.
+            Это позволяет запускать плагин на совместимых Bukkit-серверах, которые
+            поддерживают Minecraft 26.2 и требуемые API.
+        -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
-            <version>1.20.2-R0.1-SNAPSHOT</version>
+            <version>26.2-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
