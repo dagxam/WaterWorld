@@ -1,6 +1,6 @@
 name: WaterWorld
-version: 2.2
+version: 2.3
 main: com.dagxam.waterworld.WaterWorldPlugin
-api-version: '1.20'
+api-version: '26.2'
 load: STARTUP
-description: Единственный большой остров в бескрайнем океане с плавным берегом, растительностью и животными.
+description: Большой остров и дополнительные острова в бескрайнем океане с плавным берегом, растительностью и животными.
