@@ -2,7 +2,6 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -19,11 +18,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Properties;
 
-/** Main WaterWorld plugin. Uses the server's main level-name and never creates a second world. */
+/** WaterWorld replaces the main server world and never creates a second world. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
+    private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private WaterGenerator generator;
     private NaturalIslandDecorator decorator;
@@ -47,12 +51,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld автоматически добавил генератор для основного мира '" + worldName + "' в bukkit.yml.");
-            getLogger().warning("Сервер будет остановлен один раз. Запустите его повторно: переименовывать level-name не нужно.");
+            getLogger().warning("WaterWorld настроил основной мир '" + worldName + "' и сохранил старый мир в резервную копию.");
+            getLogger().warning("Сервер сейчас остановится. Просто запустите его ещё раз — level-name менять не нужно.");
             Bukkit.shutdown();
             return;
         }
-
         configureDecorators();
         getServer().getPluginManager().registerEvents(this, this);
         if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
@@ -67,7 +70,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String requestedWorld, String id) {
         if (generator == null) generator = new WaterGenerator(getConfig());
-        getLogger().info("WaterWorldGenerator подключён к основному миру '" + requestedWorld + "'.");
+        getLogger().info("WaterWorldGenerator подключён к миру '" + requestedWorld + "'.");
         return generator;
     }
 
@@ -77,7 +80,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         int cz = getConfig().getInt("island.center-z", 0);
         int radius = getConfig().getInt("island.radius", 100);
         if (!getConfig().getBoolean("island.enabled", true)) return;
-
         decorator = new NaturalIslandDecorator(sea, cx, cz, radius);
         if (getConfig().getBoolean("island.mountain.enabled", true)) {
             int mx = cx + getConfig().getInt("island.mountain.offset-x", 0);
@@ -89,13 +91,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                     getConfig().getBoolean("island.mountain.secondary-peaks", false));
             if (getConfig().getBoolean("island.mountain.cave.enabled", true)) cave = new CaveDecorator(mx, mz, mr, sea, peak);
         }
-        if (getConfig().getBoolean("village.enabled", true)) {
-            village = new VillageDecorator(cx, cz, radius,
-                    getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
-        }
-        if (getConfig().getBoolean("animals.enabled", true)) {
-            mobs = new MobDecorator(this, sea, cx, cz, radius, getConfig().getInt("animals.ocean-radius", 280));
-        }
+        if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(cx, cz, radius,
+                getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+        if (getConfig().getBoolean("animals.enabled", true)) mobs = new MobDecorator(this, sea, cx, cz, radius,
+                getConfig().getInt("animals.ocean-radius", 280));
     }
 
     @EventHandler
@@ -110,11 +109,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
         worldName = world.getName();
         if (world.getGenerator() == null) {
-            getLogger().severe("Основной мир загружен без WaterGenerator. Остановка сервера, чтобы не генерировать новые ванильные чанки.");
+            getLogger().severe("Основной мир загружен без WaterGenerator. Сервер остановлен, чтобы не создавать ванильные чанки.");
             Bukkit.shutdown();
             return;
         }
-
         if (mobs != null) {
             mobs.initializeWorld(world);
             mobs.start();
@@ -130,11 +128,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Properties p = new Properties();
         File file = new File(serverRoot(), "server.properties");
         if (file.isFile()) {
-            try (Reader reader = Files.newBufferedReader(file.toPath())) {
-                p.load(reader);
-            } catch (IOException e) {
-                getLogger().warning("Не удалось прочитать server.properties: " + e.getMessage());
-            }
+            try (Reader reader = Files.newBufferedReader(file.toPath())) { p.load(reader); }
+            catch (IOException e) { getLogger().warning("Не удалось прочитать server.properties: " + e.getMessage()); }
         }
         String name = p.getProperty("level-name", "world").trim();
         return name.isEmpty() ? "world" : name;
@@ -149,6 +144,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (section == null) section = worlds.createSection(worldName);
         if (GENERATOR_NAME.equalsIgnoreCase(section.getString("generator"))) return false;
 
+        backupExistingWorld();
         section.set("generator", GENERATOR_NAME);
         try {
             yml.save(file);
@@ -160,6 +156,20 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private void backupExistingWorld() {
+        Path world = new File(serverRoot(), worldName).toPath();
+        if (!Files.isDirectory(world)) return;
+        if (!Files.exists(world.resolve("level.dat")) && !Files.isDirectory(world.resolve("region"))) return;
+        Path backup = world.resolveSibling(worldName + "-waterworld-backup-" + BACKUP_TIME.format(LocalDateTime.now()));
+        try {
+            try { Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE); }
+            catch (IOException ignored) { Files.move(world, backup); }
+            getLogger().warning("Старый ванильный мир сохранён в: " + backup.getFileName());
+        } catch (IOException e) {
+            getLogger().warning("Не удалось сохранить старый мир в резервную копию: " + e.getMessage());
+        }
+    }
+
     private File serverRoot() {
         File plugins = getDataFolder().getParentFile();
         File root = plugins == null ? null : plugins.getParentFile();
@@ -168,31 +178,22 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void generateSpawnIslandChunks(World world) {
         int radius = Math.max(16, getConfig().getInt("island.radius", 100));
-        int cx = getConfig().getInt("island.center-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0);
+        int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
         int cr = Math.max(1, (radius + 31) / 16);
-        int ccx = Math.floorDiv(cx, 16);
-        int ccz = Math.floorDiv(cz, 16);
-        for (int x = ccx - cr; x <= ccx + cr; x++) {
-            for (int z = ccz - cr; z <= ccz + cr; z++) world.getChunkAt(x, z).load(true);
-        }
+        int ccx = Math.floorDiv(cx, 16), ccz = Math.floorDiv(cz, 16);
+        for (int x = ccx - cr; x <= ccx + cr; x++) for (int z = ccz - cr; z <= ccz + cr; z++) world.getChunkAt(x, z).load(true);
     }
 
     private void setIslandSpawn(World world) {
-        int cx = getConfig().getInt("island.center-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0);
+        int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
         int radius = Math.min(32, Math.max(8, getConfig().getInt("island.radius", 100) / 4));
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                int x = cx + dx, z = cz + dz;
-                int y = world.getHighestBlockYAt(x, z);
-                if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
-                        && world.getBlockAt(x, y + 1, z).isEmpty()
-                        && world.getBlockAt(x, y + 2, z).isEmpty()) {
-                    world.setSpawnLocation(x, y + 1, z);
-                    getLogger().info("Точка появления установлена на острове: " + x + ", " + (y + 1) + ", " + z);
-                    return;
-                }
+        for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
+            int x = cx + dx, z = cz + dz, y = world.getHighestBlockYAt(x, z);
+            if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
+                    && world.getBlockAt(x, y + 1, z).isEmpty() && world.getBlockAt(x, y + 2, z).isEmpty()) {
+                world.setSpawnLocation(x, y + 1, z);
+                getLogger().info("Точка появления установлена на острове: " + x + ", " + (y + 1) + ", " + z);
+                return;
             }
         }
         getLogger().warning("Безопасная точка появления на острове не найдена.");
@@ -200,12 +201,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void startCustomTimeCycle(World world) {
         if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
-        int daySeconds = getConfig().getInt("time-cycle.day-duration-seconds", 600);
-        int nightSeconds = getConfig().getInt("time-cycle.night-duration-seconds", 600);
-        if (daySeconds <= 0 || nightSeconds <= 0) return;
+        int day = getConfig().getInt("time-cycle.day-duration-seconds", 600);
+        int night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
+        if (day <= 0 || night <= 0) return;
         long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
-        double daySpeed = 12000.0D / (daySeconds * 20.0D);
-        double nightSpeed = 12000.0D / (nightSeconds * 20.0D);
+        double daySpeed = 12000.0D / (day * 20.0D), nightSpeed = 12000.0D / (night * 20.0D);
         final double[] remainder = {0.0D};
         world.setGameRuleValue("doDaylightCycle", "false");
         timeCycleTask = getServer().getScheduler().runTaskTimer(this, () -> {
