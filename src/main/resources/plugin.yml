@@ -1,6 +1,6 @@
 name: WaterWorld
-version: 2.4
+version: 2.5
 main: com.dagxam.waterworld.WaterWorldPlugin
 api-version: '26.2'
-load: POSTWORLD
-description: Большой остров и дополнительные острова в бескрайнем океане с плавным берегом, растительностью и животными.
+load: STARTUP
+description: Основной мир сервера генерируется WaterWorld: остров, океан, плавные берега, растительность и животные.
