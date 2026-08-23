@@ -9,7 +9,8 @@
     <version>2.3</version>
 
     <properties>
-        <maven.compiler.release>21</maven.compiler.release>
+        <!-- Сборка выполняется на JDK 17 в GitHub Actions. -->
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -21,7 +22,7 @@
     </repositories>
 
     <dependencies>
-        <!-- Чистая Bukkit/Spigot-совместимая API-зависимость. -->
+        <!-- Используем только Bukkit/Spigot-совместимый API. -->
         <dependency>
             <groupId>org.spigotmc</groupId>
             <artifactId>spigot-api</artifactId>
