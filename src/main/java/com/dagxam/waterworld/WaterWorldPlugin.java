@@ -34,7 +34,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private MountainDecorator mountain;
     private CaveDecorator cave;
     private VillageDecorator village;
-    private MobDecorator mobs;
     private String worldName = "world";
     private boolean restartRequired;
     private boolean initialized;
@@ -58,8 +57,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
         configureDecorators();
         getServer().getPluginManager().registerEvents(this, this);
-        if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
-        getLogger().info("WaterWorld ожидает создание основного мира '" + worldName + "'.");
+        getLogger().info("WaterWorld ожидает создание основного мира '" + worldName + "'. Спавн животных передан AnimalFarm/ванильному серверу.");
     }
 
     @Override
@@ -93,8 +91,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
         if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(cx, cz, radius,
                 getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
-        if (getConfig().getBoolean("animals.enabled", true)) mobs = new MobDecorator(this, sea, cx, cz, radius,
-                getConfig().getInt("animals.ocean-radius", 280));
     }
 
     @EventHandler
@@ -112,10 +108,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             getLogger().severe("Основной мир загружен без WaterGenerator. Сервер остановлен, чтобы не создавать ванильные чанки.");
             Bukkit.shutdown();
             return;
-        }
-        if (mobs != null) {
-            mobs.initializeWorld(world);
-            mobs.start();
         }
         generateSpawnIslandChunks(world);
         setIslandSpawn(world);
@@ -143,7 +135,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         ConfigurationSection section = worlds.getConfigurationSection(worldName);
         if (section == null) section = worlds.createSection(worldName);
         if (GENERATOR_NAME.equalsIgnoreCase(section.getString("generator"))) return false;
-
         backupExistingWorld();
         section.set("generator", GENERATOR_NAME);
         try {
@@ -227,7 +218,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (cave != null) cave.generate(world, chunk.getX(), chunk.getZ());
         if (decorator != null && isChunkNearAnyIsland(chunk.getX(), chunk.getZ(), world.getSeed())) decorator.decorate(world, chunk.getX(), chunk.getZ());
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
-        if (mobs != null) getServer().getScheduler().runTask(this, () -> mobs.populate(chunk));
     }
 
     private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
