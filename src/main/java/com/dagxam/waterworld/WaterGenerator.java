@@ -40,68 +40,151 @@ public final class WaterGenerator extends ChunkGenerator {
     private synchronized void ensureGenerators(long seed) {
         if (initializedSeed == seed && terrainGen != null) return;
         initializedSeed = seed;
-        terrainGen = new SimplexOctaveGenerator(new Random(seed), 4); terrainGen.setScale(terrainScale);
-        caveGen = new SimplexOctaveGenerator(new Random(seed + 1L), 3); caveGen.setScale(caveScale);
-        islandGen = new SimplexOctaveGenerator(new Random(seed + 2L), 2); islandGen.setScale(islandNoiseScale);
+        terrainGen = new SimplexOctaveGenerator(new Random(seed), 4);
+        terrainGen.setScale(terrainScale);
+        caveGen = new SimplexOctaveGenerator(new Random(seed + 1L), 3);
+        caveGen.setScale(caveScale);
+        islandGen = new SimplexOctaveGenerator(new Random(seed + 2L), 2);
+        islandGen.setScale(islandNoiseScale);
     }
 
-    @Override public void generateNoise(WorldInfo info, Random random, int chunkX, int chunkZ, ChunkData data) {
+    @Override
+    public void generateNoise(WorldInfo info, Random random, int chunkX, int chunkZ, ChunkData data) {
         ensureGenerators(info.getSeed());
         List<IslandLayout.Island> islands = layout.get(info.getSeed());
-        int minHeight = info.getMinHeight(), maxY = seaLevel + islandHeight + 3;
-        for (int lx = 0; lx < 16; lx++) for (int lz = 0; lz < 16; lz++) {
-            int x = chunkX * 16 + lx, z = chunkZ * 16 + lz;
-            IslandLayout.Island island = nearestIsland(islands, x, z);
-            double distance = island == null ? Double.MAX_VALUE : distance(x, z, island.x(), island.z());
-            int slope = island == null ? 0 : island.radius() + Math.max(20, island.radius() / 3);
-            int floor = getOceanFloor(info, x, z);
-            for (int y = minHeight + 1; y <= maxY; y++) {
-                if (islandEnabled && island != null && distance <= slope) {
-                    setIslandTerrain(data, lx, lz, x, z, y, getIslandSurface(x, z, distance, island.radius(), slope), floor);
-                } else setOceanTerrain(data, lx, lz, x, z, y, floor);
+        int minHeight = info.getMinHeight();
+        int maxHeight = Math.min(info.getMaxHeight() - 1, seaLevel + islandHeight + 4);
+
+        for (int lx = 0; lx < 16; lx++) {
+            for (int lz = 0; lz < 16; lz++) {
+                int x = chunkX * 16 + lx;
+                int z = chunkZ * 16 + lz;
+                IslandLayout.Island island = islandEnabled ? nearestIsland(islands, x, z) : null;
+                double distance = island == null ? Double.MAX_VALUE : distance(x, z, island.x(), island.z());
+                int floor = getOceanFloor(info, x, z);
+                int surface = island == null ? Integer.MIN_VALUE : getIslandSurface(x, z, distance, island.radius());
+
+                for (int y = minHeight + 1; y <= maxHeight; y++) {
+                    if (island != null && distance <= getSlopeRadius(island.radius())) {
+                        setIslandTerrain(data, lx, lz, x, z, y, surface);
+                    } else {
+                        setOceanTerrain(data, lx, lz, x, z, y, floor);
+                    }
+                }
+                data.setBlock(lx, minHeight, lz, Material.BEDROCK);
             }
-            data.setBlock(lx, minHeight, lz, Material.BEDROCK);
         }
     }
 
     private IslandLayout.Island nearestIsland(List<IslandLayout.Island> islands, int x, int z) {
-        IslandLayout.Island best = null; double bestDistance = Double.MAX_VALUE;
+        IslandLayout.Island best = null;
+        double bestDistance = Double.MAX_VALUE;
         for (IslandLayout.Island island : islands) {
             double d = distance(x, z, island.x(), island.z());
-            if (d < bestDistance) { bestDistance = d; best = island; }
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = island;
+            }
         }
         return best;
     }
-    private int getOceanFloor(WorldInfo info, int x, int z) { return clamp(oceanBaseHeight + (int)Math.round(terrainGen.noise(x,z,0.5D,0.5D,true)*oceanHeightAmplitude), info.getMinHeight()+2, seaLevel-1); }
-    private void setOceanTerrain(ChunkData d,int lx,int lz,int x,int z,int y,int floor) {
-        if (y>seaLevel) d.setBlock(lx,y,lz,Material.AIR);
-        else if (y>floor) d.setBlock(lx,y,lz,Material.WATER);
-        else if (y<floor-caveRoof && isCave(x,y,z)) d.setBlock(lx,y,lz,Material.CAVE_AIR);
-        else if (y<=0) d.setBlock(lx,y,lz,Material.DEEPSLATE);
-        else if (y<floor-4) d.setBlock(lx,y,lz,Material.STONE);
-        else if (y<floor-1) d.setBlock(lx,y,lz,Material.SANDSTONE);
-        else d.setBlock(lx,y,lz,Material.SAND);
+
+    private int getSlopeRadius(int radius) {
+        return Math.max(radius + 16, radius + Math.max(20, radius / 3));
     }
-    private void setIslandTerrain(ChunkData d,int lx,int lz,int x,int z,int y,int surface,int floor) {
-        if (y>surface) { d.setBlock(lx,y,lz,y<=seaLevel&&surface<seaLevel?Material.WATER:Material.AIR); return; }
-        if (y<=0) { d.setBlock(lx,y,lz,Material.DEEPSLATE); return; }
-        if (surface<=seaLevel) { d.setBlock(lx,y,lz,y<surface-4?Material.STONE:y<surface-1?Material.SANDSTONE:Material.SAND); return; }
-        d.setBlock(lx,y,lz,y<surface-5?Material.STONE:y<surface-1?Material.DIRT:Material.GRASS_BLOCK);
+
+    private int getOceanFloor(WorldInfo info, int x, int z) {
+        return clamp(oceanBaseHeight + (int) Math.round(terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude),
+                info.getMinHeight() + 2, seaLevel - 1);
     }
-    private boolean isCave(int x,int y,int z){return caveGen.noise(x,y,z,0.5D,0.5D,true)>caveThreshold;}
-    private int getIslandSurface(int x,int z,double distance,int radius,int slopeRadius){
-        if(distance<=radius){ double f=1D-distance/radius; double v=islandGen.noise(x,z,0.5D,0.5D,true)*islandVariation; return clamp(seaLevel+1+(int)Math.round(Math.pow(Math.max(0,f),1.25D)*islandHeight+v),seaLevel+1,seaLevel+islandHeight+2); }
-        double t=Math.max(0D,Math.min(1D,(distance-radius)/(slopeRadius-radius))); t=t*t*(3D-2D*t);
-        return (int)Math.round((seaLevel-1D)+(getLocalOceanHeight(x,z)-(seaLevel-1D))*t);
+
+    private void setOceanTerrain(ChunkData data, int lx, int lz, int x, int z, int y, int floor) {
+        if (y > seaLevel) data.setBlock(lx, y, lz, Material.AIR);
+        else if (y > floor) data.setBlock(lx, y, lz, Material.WATER);
+        else if (y < floor - caveRoof && isCave(x, y, z)) data.setBlock(lx, y, lz, Material.CAVE_AIR);
+        else if (y <= 0) data.setBlock(lx, y, lz, Material.DEEPSLATE);
+        else if (y < floor - 4) data.setBlock(lx, y, lz, Material.STONE);
+        else if (y < floor - 1) data.setBlock(lx, y, lz, Material.SANDSTONE);
+        else data.setBlock(lx, y, lz, Material.SAND);
     }
-    private double getLocalOceanHeight(int x,int z){return clampDouble(oceanBaseHeight+terrainGen.noise(x,z,0.5D,0.5D,true)*oceanHeightAmplitude,24D,seaLevel-1D);}
-    private static double distance(int x,int z,int cx,int cz){double dx=x-cx,dz=z-cz;return Math.sqrt(dx*dx+dz*dz);}
-    private static int clamp(int v,int min,int max){return Math.max(min,Math.min(max,v));}
-    private static double clampDouble(double v,double min,double max){return Math.max(min,Math.min(max,v));}
-    @Override public BiomeProvider getDefaultBiomeProvider(WorldInfo info){ return new BiomeProvider(){ public Biome getBiome(WorldInfo i,int x,int y,int z){ for(IslandLayout.Island island:layout.get(i.getSeed())) if(distance(x,z,island.x(),island.z())<=island.radius()) return Biome.PLAINS; return Biome.WARM_OCEAN;} public List<Biome> getBiomes(WorldInfo i){return List.of(Biome.WARM_OCEAN,Biome.PLAINS);}};}
-    @Override public boolean shouldGenerateDecorations(){return true;}
-    @Override public boolean shouldGenerateCaves(){return false;}
-    @Override public boolean shouldGenerateNoise(){return false;}
-    @Override public boolean shouldGenerateSurface(){return false;}
-    @Override public boolean shouldGenerateMobs(){return true;}
+
+    private void setIslandTerrain(ChunkData data, int lx, int lz, int x, int z, int y, int surface) {
+        if (y > surface) {
+            data.setBlock(lx, y, lz, y <= seaLevel ? Material.WATER : Material.AIR);
+            return;
+        }
+        if (y <= 0) {
+            data.setBlock(lx, y, lz, Material.DEEPSLATE);
+            return;
+        }
+        if (surface <= seaLevel) {
+            data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
+            return;
+        }
+        data.setBlock(lx, y, lz, y < surface - 5 ? Material.STONE : y < surface - 1 ? Material.DIRT : Material.GRASS_BLOCK);
+    }
+
+    private boolean isCave(int x, int y, int z) {
+        return caveGen.noise(x, y, z, 0.5D, 0.5D, true) > caveThreshold;
+    }
+
+    /** Плавный переход: центр острова выше моря, край постепенно опускается до дна. */
+    private int getIslandSurface(int x, int z, double distance, int radius) {
+        int slopeRadius = getSlopeRadius(radius);
+        double ocean = getLocalOceanHeight(x, z);
+        if (distance >= slopeRadius) return (int) Math.round(ocean);
+
+        if (distance <= radius) {
+            double f = 1.0D - distance / radius;
+            double noise = islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation;
+            double land = seaLevel + 2.0D + Math.pow(Math.max(0.0D, f), 1.25D) * islandHeight + noise;
+            return clamp((int) Math.round(land), seaLevel + 1, seaLevel + islandHeight + 3);
+        }
+
+        double t = (distance - radius) / (double) (slopeRadius - radius);
+        t = t * t * (3.0D - 2.0D * t);
+        double edge = seaLevel + 1.0D;
+        return (int) Math.round(edge + (ocean - edge) * t);
+    }
+
+    private double getLocalOceanHeight(int x, int z) {
+        return clampDouble(oceanBaseHeight + terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude, 24.0D, seaLevel - 1.0D);
+    }
+
+    private static double distance(int x, int z, int cx, int cz) {
+        double dx = x - cx, dz = z - cz;
+        return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    @Override
+    public BiomeProvider getDefaultBiomeProvider(WorldInfo info) {
+        return new BiomeProvider() {
+            @Override
+            public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
+                for (IslandLayout.Island island : layout.get(worldInfo.getSeed())) {
+                    if (distance(x, z, island.x(), island.z()) <= island.radius()) return Biome.PLAINS;
+                }
+                return Biome.WARM_OCEAN;
+            }
+
+            @Override
+            public List<Biome> getBiomes(WorldInfo worldInfo) {
+                return List.of(Biome.WARM_OCEAN, Biome.PLAINS);
+            }
+        };
+    }
+
+    @Override public boolean shouldGenerateDecorations() { return true; }
+    @Override public boolean shouldGenerateCaves() { return false; }
+    @Override public boolean shouldGenerateNoise() { return false; }
+    @Override public boolean shouldGenerateSurface() { return false; }
+    @Override public boolean shouldGenerateMobs() { return true; }
 }
