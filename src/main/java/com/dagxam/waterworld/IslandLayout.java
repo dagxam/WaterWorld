@@ -7,9 +7,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
-/** Deterministic cached island layout. No layout is recreated during chunk population. */
+/** Deterministic cached island layout. Only forest and tropical secondary islands are generated. */
 public final class IslandLayout {
-    public enum IslandType { MAIN, FOREST, ROCKY, TROPICAL }
+    public enum IslandType { MAIN, FOREST, TROPICAL }
 
     public record Island(int x, int z, int radius, IslandType type) {
         public boolean main() { return type == IslandType.MAIN; }
@@ -24,7 +24,7 @@ public final class IslandLayout {
         mainX = config.getInt("island.center-x", 0);
         mainZ = config.getInt("island.center-z", 0);
         mainRadius = Math.max(24, config.getInt("island.radius", 100));
-        count = Math.max(0, config.getInt("additional-islands.count", 3));
+        count = Math.max(0, config.getInt("additional-islands.count", 2));
         minDistance = Math.max(mainRadius + 64, config.getInt("additional-islands.min-distance", 180));
         maxDistance = Math.max(minDistance + 32, config.getInt("additional-islands.max-distance", 520));
         minRadius = Math.max(18, config.getInt("additional-islands.min-radius", 32));
@@ -45,11 +45,7 @@ public final class IslandLayout {
                 int radius = minRadius + random.nextInt(maxRadius - minRadius + 1);
                 int x = mainX + (int) Math.round(Math.cos(angle) * distance);
                 int z = mainZ + (int) Math.round(Math.sin(angle) * distance);
-                IslandType type = switch (random.nextInt(3)) {
-                    case 0 -> IslandType.FOREST;
-                    case 1 -> IslandType.ROCKY;
-                    default -> IslandType.TROPICAL;
-                };
+                IslandType type = random.nextBoolean() ? IslandType.FOREST : IslandType.TROPICAL;
                 boolean overlaps = false;
                 for (Island other : result) {
                     long dx = (long) x - other.x();
