@@ -1,5 +1,6 @@
 package com.dagxam.waterworld;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
@@ -8,7 +9,6 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
-import org.bukkit.map.MapCursor;
 import org.bukkit.map.MapView;
 import org.bukkit.persistence.PersistentDataType;
 
@@ -106,7 +106,7 @@ public final class TreasureDecorator {
     }
 
     public ItemStack createTreasureMap(World world, Treasure treasure) {
-        MapView view = world.getServer().createMap(world);
+        MapView view = Bukkit.createMap(world);
         view.setCenterX(treasure.x());
         view.setCenterZ(treasure.z());
         view.setScale(treasure.tier() == Tier.LEGENDARY ? MapView.Scale.NORMAL : MapView.Scale.CLOSE);
