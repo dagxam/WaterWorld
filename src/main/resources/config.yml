@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.0 — optimized world generation
+# WaterWorld 3.1 — optimized islands, villages and treasures
 # ==========================================================
 world:
   name: waterworld
@@ -7,14 +7,12 @@ world:
 sea-level: 63
 
 spawn:
-  # 3 = 7x7 chunks, generated only once at startup.
   preload-chunk-radius: 3
 
 time-cycle:
   enabled: true
   day-duration-seconds: 600
   night-duration-seconds: 600
-  # 20 ticks = one update per second instead of every tick.
   update-interval-ticks: 20
 
 ocean:
@@ -32,17 +30,14 @@ island:
   center-x: 0
   center-z: 0
   radius: 100
-  # Extra width of the smooth transition from island to ocean.
   slope-radius: 42
   height: 14
   variation: 2.8
   noise-scale: 0.035
-
   mountain:
     enabled: true
     offset-x: 0
     offset-z: -22
-    # Base radius before stretching.
     radius: 48
     stretch-x: 1.55
     stretch-z: 0.85
@@ -62,10 +57,18 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
+# The main island always gets a village if terrain allows it.
+# Large secondary islands get one according to the chance below.
 village:
   enabled: true
-  offset-x: 0
-  offset-z: 55
+  min-island-radius: 48
+  additional-island-chance: 0.55
+
+treasures:
+  enabled: true
+  # Each island receives a deterministic number of hidden barrels.
+  min-per-island: 1
+  max-per-island: 3
 
 animals:
   enabled: true
