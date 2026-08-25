@@ -1,8 +1,8 @@
-# WaterWorld 3.0
+# WaterWorld 3.1
 
 Optimized generator for the main Minecraft server world.
 
-## What changed in 3.0
+## What changed
 
 - Terrain geometry is generated in one `ChunkGenerator` pass.
 - Removed the expensive manual high-altitude `AIR` fill loop.
@@ -12,7 +12,8 @@ Optimized generator for the main Minecraft server world.
 - Cave generation moved into the generator; old duplicate cave decorator removed.
 - Removed duplicate `IslandDecorator` and obsolete `MountainDecorator`.
 - Vegetation now uses every corresponding value from `config.yml`.
-- Added several deterministic island types: forest, rocky and tropical.
+- Rocky secondary islands were removed completely.
+- Exactly two additional natural islands are generated: forest and tropical.
 - Added a wider natural shoreline and shallow-water transition.
 - Main mountain is stretched instead of being a perfect circle.
 - Spawn preload was reduced to a configurable chunk radius.
