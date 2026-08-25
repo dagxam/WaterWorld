@@ -138,7 +138,6 @@ public final class TreasureDecorator {
         String type = switch (treasure.island().type()) {
             case MAIN -> "Главный остров";
             case FOREST -> "Лесной остров";
-            case ROCKY -> "Каменистый остров";
             case TROPICAL -> "Тропический остров";
         };
         String clue = switch (treasure.tier()) {
