@@ -19,7 +19,7 @@ public final class VillageDecorator {
     public VillageDecorator(org.bukkit.configuration.file.FileConfiguration config, IslandLayout layout, TreasureDecorator treasures) {
         this.layout = layout;
         this.treasures = treasures;
-        this.minRadius = Math.max(40, config.getInt("village.min-island-radius", 48));
+        this.minRadius = Math.max(32, config.getInt("village.min-island-radius", 48));
     }
 
     public boolean shouldGenerate(World world, IslandLayout.Island island) {
@@ -29,21 +29,29 @@ public final class VillageDecorator {
     public void generate(World world, IslandLayout.Island island) {
         if (!shouldGenerate(world, island)) return;
         String key = world.getUID() + ":" + island.x() + ":" + island.z();
-        if (!generated.add(key)) return;
+        if (generated.contains(key)) return;
+
         Random random = new Random(world.getSeed() ^ ((long) island.x() * 31L) ^ ((long) island.z() * 131L));
-        List<int[]> candidates = new ArrayList<>();
-        int[][] offsets = {{0,0},{-18,-12},{18,-12},{-18,18},{18,18},{0,28},{-28,2},{28,2}};
-        for (int[] o : offsets) {
-            int x = island.x() + o[0], z = island.z() + o[1];
-            if (inside(island, x, z, 10) && isFlat(world, x, z, 7)) candidates.add(new int[]{x,z});
-        }
-        if (candidates.size() < 3) return;
-        int houses = Math.min(candidates.size(), island.main() ? 5 : 3 + random.nextInt(2));
-        List<int[]> used = new ArrayList<>(candidates.subList(0, houses));
+        List<int[]> candidates = findVillagePads(world, island);
+        int needed = island.main() ? 5 : 3;
+        if (candidates.size() < needed) return;
+
+        List<int[]> used = new ArrayList<>(candidates.subList(0, needed));
         for (int[] p : used) buildHouse(world, p[0], p[1], random);
         buildPaths(world, island.x(), island.z(), used);
         spawnVillagers(world, used);
         placeTreasureMaps(world, island, used, random);
+        generated.add(key);
+    }
+
+    private List<int[]> findVillagePads(World world, IslandLayout.Island island) {
+        List<int[]> result = new ArrayList<>();
+        int[][] offsets = {{0,0},{-20,-14},{20,-14},{-22,16},{22,16},{0,30},{-32,2},{32,2},{0,-30},{-10,28},{10,28}};
+        for (int[] offset : offsets) {
+            int x = island.x() + offset[0], z = island.z() + offset[1];
+            if (inside(island, x, z, 10) && isFlat(world, x, z, 7)) result.add(new int[]{x, z});
+        }
+        return result;
     }
 
     private boolean inside(IslandLayout.Island island, int x, int z, int margin) {
@@ -75,16 +83,14 @@ public final class VillageDecorator {
             for (int bz = minZ; bz < minZ + d; bz++) for (int bx : new int[]{minX, minX + w - 1}) world.getBlockAt(bx, y, bz).setType((bz == minZ || bz == minZ + d - 1) ? Material.OAK_LOG : Material.OAK_PLANKS, false);
         }
         world.getBlockAt(x, ground + 2, minZ).setType(Material.OAK_DOOR, false);
+        world.getBlockAt(x, ground + 3, minZ).setType(Material.OAK_DOOR, false);
         world.getBlockAt(x - 2, ground + 3, minZ).setType(Material.GLASS_PANE, false);
         world.getBlockAt(x + 2, ground + 3, minZ + d - 1).setType(Material.GLASS_PANE, false);
         world.getBlockAt(x - 1, ground + 2, z).setType(Material.CHEST, false);
         world.getBlockAt(x + 1, ground + 2, z).setType(random.nextBoolean() ? Material.COMPOSTER : Material.FLETCHING_TABLE, false);
         for (int layer = 0; layer <= 3; layer++) {
             int y = ground + wallH + 1 + layer, fromX = minX + layer, toX = minX + w - 1 - layer;
-            for (int bx = fromX; bx <= toX; bx++) {
-                world.getBlockAt(bx, y, minZ).setType(Material.OAK_PLANKS, false);
-                world.getBlockAt(bx, y, minZ + d - 1).setType(Material.OAK_PLANKS, false);
-            }
+            for (int bx = fromX; bx <= toX; bx++) { world.getBlockAt(bx, y, minZ).setType(Material.OAK_PLANKS, false); world.getBlockAt(bx, y, minZ + d - 1).setType(Material.OAK_PLANKS, false); }
         }
     }
 
@@ -115,15 +121,18 @@ public final class VillageDecorator {
         Collections.shuffle(list, random);
         for (int i = 0; i < list.size(); i++) {
             int[] house = houses.get(i % houses.size());
-            int ground = world.getHighestBlockYAt(house[0], house[1]);
-            int chestX = house[0] - 1;
-            int chestY = ground + 2;
-            int chestZ = house[1];
-            if (world.getBlockAt(chestX, chestY, chestZ).getState() instanceof Chest chest) {
-                ItemStack map = treasures.createTreasureMap(world, list.get(i));
-                chest.getBlockInventory().addItem(map);
-                chest.update(true, false);
-            }
+            Chest chest = findChest(world, house[0], house[1]);
+            if (chest == null) continue;
+            chest.getBlockInventory().addItem(treasures.createTreasureMap(world, list.get(i)));
+            chest.update(true, false);
         }
+    }
+
+    private Chest findChest(World world, int x, int z) {
+        int ground = world.getHighestBlockYAt(x, z);
+        for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) for (int dy = 1; dy <= 5; dy++) {
+            if (world.getBlockAt(x + dx, ground + dy, z + dz).getState() instanceof Chest chest) return chest;
+        }
+        return null;
     }
 }
