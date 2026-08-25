@@ -1,6 +1,6 @@
 name: WaterWorld
-version: 2.6
+version: 3.0
 main: com.dagxam.waterworld.WaterWorldPlugin
-api-version: '26.2'
+api-version: '1.21'
 load: STARTUP
-description: "Основной мир сервера генерируется WaterWorld. Остров, океан, плавные берега, растительность и животные."
+description: "Optimized ocean world with natural islands, mountain, caves, vegetation, village and balanced mobs."
