@@ -1,10 +1,9 @@
-name: Сборка и Релиз Maven
+name: Build and Release Maven
 
 on:
   push:
-    branches: [ "main", "master" ]
-    tags:
-      - 'v*'
+    branches: [ "main", "master", "waterworld-3-optimized" ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ "main", "master" ]
 
@@ -13,40 +12,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-    - name: Скачивание репозитория
-      uses: actions/checkout@v4
-
-    - name: Установка Java 26
+    - uses: actions/checkout@v4
+    - name: Setup Java 21
       uses: actions/setup-java@v4
       with:
-        java-version: '26'
+        java-version: '21'
         distribution: 'temurin'
         cache: maven
-
-    - name: Проверка версии Java
-      run: java -version && javac -version
-
-    - name: Сборка проекта через Maven
+    - name: Build
       run: mvn -B clean package --file pom.xml
-
-    - name: Сохранение скомпилированного плагина (Артефакт)
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: WaterWorld-Plugin
         path: target/WaterWorld-*.jar
-
-    - name: Создание GitHub Релиза (только при создании тега)
+    - name: Create GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v2
       with:
-        name: Релиз ${{ github.ref_name }}
-        body: |
-          Автоматическая сборка плагина **WaterWorld** от **dagxam**.
-          
-          ✅ Сборка успешно завершена. Плагин готов к работе на сервере.
-          ⬇️ Скачайте готовый `.jar` файл в разделе **Assets** ниже.
+        name: Release ${{ github.ref_name }}
         files: target/WaterWorld-*.jar
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
