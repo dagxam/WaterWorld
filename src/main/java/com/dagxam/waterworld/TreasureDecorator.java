@@ -113,7 +113,7 @@ public final class TreasureDecorator {
         view.setTrackingPosition(true);
         view.setUnlimitedTracking(false);
         view.setLocked(false);
-        view.getCursors().clear();
+
         ItemStack map = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) map.getItemMeta();
         meta.setMapView(view);
