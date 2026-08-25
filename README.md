@@ -1,21 +1,30 @@
-# WaterWorld 2.0
+# WaterWorld 3.0
 
-Improved version of the original WaterWorld generator.
+Optimized generator for the main Minecraft server world.
 
-## Main changes
+## What changed in 3.0
 
-- Noise generators are cached per world seed instead of recreated for every chunk.
-- Ocean terrain, caves and island generation are separated into readable methods.
-- Ocean terrain is configurable in `config.yml`.
-- Added one central plains island around X=0, Z=0.
-- Island is about 34x34 blocks at its widest point.
-- Island rises above sea level, has a sandy shoreline, dirt and grass.
-- Island biome is `PLAINS`.
-- Vanilla decorations remain enabled so plains vegetation and trees can generate.
-- Mob generation remains enabled so normal passive mobs can spawn on the island.
-- Cave generation is kept away from the upper ocean floor.
-- Added basic bounds/clamping to prevent invalid terrain heights.
+- Terrain geometry is generated in one `ChunkGenerator` pass.
+- Removed the expensive manual high-altitude `AIR` fill loop.
+- `IslandLayout` is cached and never recreated for every populated chunk.
+- Distance checks use squared distances in hot paths.
+- Mountain generation moved from a post-population decorator into the generator.
+- Cave generation moved into the generator; old duplicate cave decorator removed.
+- Removed duplicate `IslandDecorator` and obsolete `MountainDecorator`.
+- Vegetation now uses every corresponding value from `config.yml`.
+- Added several deterministic island types: forest, rocky and tropical.
+- Added a wider natural shoreline and shallow-water transition.
+- Main mountain is stretched instead of being a perfect circle.
+- Spawn preload was reduced to a configurable chunk radius.
+- Spawn search uses a small deterministic set of candidates instead of scanning thousands of blocks.
+- Time cycle defaults to one update per second instead of every tick.
+- `MobDecorator` is connected and uses event-driven caps without periodic full-world entity scans.
+- Build target is Java 21 for broader server compatibility.
 
-## Important
+## Generation pipeline
 
-The repository integration currently returns HTTP 403 for write operations, so these changes were packaged as source files instead of being pushed directly to GitHub.
+`WaterGenerator -> ocean -> island shape -> mountain -> caves -> surface`
+
+`ChunkPopulateEvent -> vegetation -> village -> optional light mob population`
+
+Only objects that require a populated world remain in `ChunkPopulateEvent`.
