@@ -9,26 +9,21 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
 
-/** Small deterministic villages. A village may appear on the main island and on sufficiently large secondary islands. */
+/** Deterministic villages. The main island and both secondary islands always receive a village when terrain allows it. */
 public final class VillageDecorator {
     private final IslandLayout layout;
     private final TreasureDecorator treasures;
     private final int minRadius;
-    private final double additionalChance;
     private final Set<String> generated = new HashSet<>();
 
     public VillageDecorator(org.bukkit.configuration.file.FileConfiguration config, IslandLayout layout, TreasureDecorator treasures) {
         this.layout = layout;
         this.treasures = treasures;
         this.minRadius = Math.max(40, config.getInt("village.min-island-radius", 48));
-        this.additionalChance = Math.max(0.0D, Math.min(1.0D, config.getDouble("village.additional-island-chance", 0.55D)));
     }
 
     public boolean shouldGenerate(World world, IslandLayout.Island island) {
-        if (island.radius() < minRadius) return false;
-        if (island.main()) return true;
-        long mixed = world.getSeed() ^ ((long) island.x() * 341873128712L) ^ ((long) island.z() * 132897987541L);
-        return new Random(mixed).nextDouble() < additionalChance;
+        return island.radius() >= minRadius;
     }
 
     public void generate(World world, IslandLayout.Island island) {
@@ -44,7 +39,7 @@ public final class VillageDecorator {
         }
         if (candidates.size() < 3) return;
         int houses = Math.min(candidates.size(), island.main() ? 5 : 3 + random.nextInt(2));
-        List<int[]> used = candidates.subList(0, houses);
+        List<int[]> used = new ArrayList<>(candidates.subList(0, houses));
         for (int[] p : used) buildHouse(world, p[0], p[1], random);
         buildPaths(world, island.x(), island.z(), used);
         spawnVillagers(world, used);
@@ -86,7 +81,10 @@ public final class VillageDecorator {
         world.getBlockAt(x + 1, ground + 2, z).setType(random.nextBoolean() ? Material.COMPOSTER : Material.FLETCHING_TABLE, false);
         for (int layer = 0; layer <= 3; layer++) {
             int y = ground + wallH + 1 + layer, fromX = minX + layer, toX = minX + w - 1 - layer;
-            for (int bx = fromX; bx <= toX; bx++) { world.getBlockAt(bx, y, minZ).setType(Material.OAK_PLANKS, false); world.getBlockAt(bx, y, minZ + d - 1).setType(Material.OAK_PLANKS, false); }
+            for (int bx = fromX; bx <= toX; bx++) {
+                world.getBlockAt(bx, y, minZ).setType(Material.OAK_PLANKS, false);
+                world.getBlockAt(bx, y, minZ + d - 1).setType(Material.OAK_PLANKS, false);
+            }
         }
     }
 
@@ -112,11 +110,16 @@ public final class VillageDecorator {
     }
 
     private void placeTreasureMaps(World world, IslandLayout.Island island, List<int[]> houses, Random random) {
-        List<TreasureDecorator.Treasure> list = treasures.forIsland(world, island);
-        for (int i = 0; i < list.size() && i < houses.size(); i++) {
-            int[] p = houses.get(random.nextInt(houses.size()));
-            int y = world.getHighestBlockYAt(p[0] - 1, p[1]);
-            if (world.getBlockAt(p[0] - 1, y + 1, p[1]).getState() instanceof Chest chest) {
+        List<TreasureDecorator.Treasure> list = new ArrayList<>(treasures.forIsland(world, island));
+        if (list.isEmpty()) return;
+        Collections.shuffle(list, random);
+        for (int i = 0; i < list.size(); i++) {
+            int[] house = houses.get(i % houses.size());
+            int ground = world.getHighestBlockYAt(house[0], house[1]);
+            int chestX = house[0] - 1;
+            int chestY = ground + 2;
+            int chestZ = house[1];
+            if (world.getBlockAt(chestX, chestY, chestZ).getState() instanceof Chest chest) {
                 ItemStack map = treasures.createTreasureMap(world, list.get(i));
                 chest.getBlockInventory().addItem(map);
                 chest.update(true, false);
