@@ -44,8 +44,9 @@ island:
     peak-height: 118
     snow-line: 102
 
+# Exactly two additional islands: forest and tropical.
 additional-islands:
-  count: 3
+  count: 2
   min-radius: 32
   max-radius: 72
   min-distance: 180
