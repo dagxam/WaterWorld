@@ -24,216 +24,138 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
 
-/** WaterWorld replaces the main server world and never creates a second world. */
+/** WaterWorld 3.0 main-world generator. Geometry is generated in WaterGenerator; population stays lightweight. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private WaterGenerator generator;
-    private NaturalIslandDecorator decorator;
-    private MountainDecorator mountain;
-    private CaveDecorator cave;
+    private NaturalIslandDecorator vegetation;
     private VillageDecorator village;
+    private MobDecorator mobs;
     private String worldName = "world";
-    private boolean restartRequired;
-    private boolean initialized;
+    private boolean restartRequired, initialized;
     private BukkitTask timeCycleTask;
 
-    @Override
-    public void onLoad() {
+    @Override public void onLoad() {
         saveDefaultConfig();
         worldName = readLevelName();
         generator = new WaterGenerator(getConfig());
         restartRequired = registerMainWorldGenerator();
     }
 
-    @Override
-    public void onEnable() {
+    @Override public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld настроил основной мир '" + worldName + "' и сохранил старый мир в резервную копию.");
-            getLogger().warning("Сервер сейчас остановится. Просто запустите его ещё раз — level-name менять не нужно.");
+            getLogger().warning("WaterWorld подготовил генератор основного мира. Перезапустите сервер.");
             Bukkit.shutdown();
             return;
         }
-        configureDecorators();
+        configurePopulation();
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("WaterWorld ожидает создание основного мира '" + worldName + "'. Спавн животных передан AnimalFarm/ванильному серверу.");
+        if (mobs != null) getServer().getPluginManager().registerEvents(mobs, this);
     }
 
-    @Override
-    public void onDisable() {
+    @Override public void onDisable() {
         if (timeCycleTask != null) timeCycleTask.cancel();
+        if (mobs != null) mobs.stop();
     }
 
-    @Override
-    public ChunkGenerator getDefaultWorldGenerator(String requestedWorld, String id) {
+    @Override public ChunkGenerator getDefaultWorldGenerator(String requestedWorld, String id) {
         if (generator == null) generator = new WaterGenerator(getConfig());
-        getLogger().info("WaterWorldGenerator подключён к миру '" + requestedWorld + "'.");
         return generator;
     }
 
-    private void configureDecorators() {
-        int sea = getConfig().getInt("sea-level", 63);
-        int cx = getConfig().getInt("island.center-x", 0);
-        int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 100);
-        if (!getConfig().getBoolean("island.enabled", true)) return;
-        decorator = new NaturalIslandDecorator(sea, cx, cz, radius);
-        if (getConfig().getBoolean("island.mountain.enabled", true)) {
-            int mx = cx + getConfig().getInt("island.mountain.offset-x", 0);
-            int mz = cz + getConfig().getInt("island.mountain.offset-z", -22);
-            int mr = getConfig().getInt("island.mountain.radius", 38);
-            int peak = getConfig().getInt("island.mountain.peak-height", 92);
-            mountain = new MountainDecorator(sea, mx, mz, mr, peak,
-                    getConfig().getInt("island.mountain.snow-line", 120),
-                    getConfig().getBoolean("island.mountain.secondary-peaks", false));
-            if (getConfig().getBoolean("island.mountain.cave.enabled", true)) cave = new CaveDecorator(mx, mz, mr, sea, peak);
+    private void configurePopulation() {
+        vegetation = getConfig().getBoolean("vegetation.enabled", true) ? new NaturalIslandDecorator(getConfig(), generator.layout()) : null;
+        int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
+        if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(cx, cz,
+                getConfig().getInt("island.radius", 100), getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+        if (getConfig().getBoolean("animals.enabled", true)) {
+            mobs = new MobDecorator(this, getConfig(), generator.layout());
         }
-        if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(cx, cz, radius,
-                getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
     }
 
-    @EventHandler
-    public void onServerLoad(ServerLoadEvent event) {
+    @EventHandler public void onServerLoad(ServerLoadEvent event) {
         if (initialized || event.getType() != ServerLoadEvent.LoadType.STARTUP) return;
         initialized = true;
         World world = Bukkit.getWorld(worldName);
-        if (world == null && !Bukkit.getWorlds().isEmpty()) world = Bukkit.getWorlds().get(0);
-        if (world == null) {
-            getLogger().severe("Основной мир не найден после запуска.");
-            return;
+        if (world == null && !Bukkit.getWorlds().isEmpty()) world = Bukkit.getWorlds().getFirst();
+        if (world == null || world.getGenerator() == null) {
+            getLogger().severe("Основной мир WaterWorld не был загружен с генератором. Сервер остановлен."); Bukkit.shutdown(); return;
         }
         worldName = world.getName();
-        if (world.getGenerator() == null) {
-            getLogger().severe("Основной мир загружен без WaterGenerator. Сервер остановлен, чтобы не создавать ванильные чанки.");
-            Bukkit.shutdown();
-            return;
-        }
-        generateSpawnIslandChunks(world);
+        generateSpawnArea(world);
         setIslandSpawn(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld успешно запущен. Основной мир: " + world.getName()
-                + ", генератор: " + world.getGenerator().getClass().getName());
+        if (mobs != null) mobs.initializeWorld(world);
+        getLogger().info("WaterWorld 3.0 готов: " + worldName);
     }
 
     private String readLevelName() {
-        Properties p = new Properties();
-        File file = new File(serverRoot(), "server.properties");
-        if (file.isFile()) {
-            try (Reader reader = Files.newBufferedReader(file.toPath())) { p.load(reader); }
-            catch (IOException e) { getLogger().warning("Не удалось прочитать server.properties: " + e.getMessage()); }
-        }
-        String name = p.getProperty("level-name", "world").trim();
-        return name.isEmpty() ? "world" : name;
+        Properties p = new Properties(); File file = new File(serverRoot(), "server.properties");
+        if (file.isFile()) try (Reader r = Files.newBufferedReader(file.toPath())) { p.load(r); } catch (IOException e) { getLogger().warning(e.getMessage()); }
+        String name = p.getProperty("level-name", "world").trim(); return name.isEmpty() ? "world" : name;
     }
 
     private boolean registerMainWorldGenerator() {
-        File file = new File(serverRoot(), "bukkit.yml");
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
-        ConfigurationSection worlds = yml.getConfigurationSection("worlds");
-        if (worlds == null) worlds = yml.createSection("worlds");
-        ConfigurationSection section = worlds.getConfigurationSection(worldName);
-        if (section == null) section = worlds.createSection(worldName);
+        File file = new File(serverRoot(), "bukkit.yml"); YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        ConfigurationSection worlds = yml.getConfigurationSection("worlds"); if (worlds == null) worlds = yml.createSection("worlds");
+        ConfigurationSection section = worlds.getConfigurationSection(worldName); if (section == null) section = worlds.createSection(worldName);
         if (GENERATOR_NAME.equalsIgnoreCase(section.getString("generator"))) return false;
-        backupExistingWorld();
-        section.set("generator", GENERATOR_NAME);
-        try {
-            yml.save(file);
-            getLogger().info("Автоматически настроен bukkit.yml: worlds." + worldName + ".generator = " + GENERATOR_NAME);
-            return true;
-        } catch (IOException e) {
-            getLogger().severe("Не удалось записать bukkit.yml: " + e.getMessage());
-            return false;
-        }
+        backupExistingWorld(); section.set("generator", GENERATOR_NAME);
+        try { yml.save(file); return true; } catch (IOException e) { getLogger().severe("Не удалось записать bukkit.yml: " + e.getMessage()); return false; }
     }
 
     private void backupExistingWorld() {
-        Path world = new File(serverRoot(), worldName).toPath();
-        if (!Files.isDirectory(world)) return;
+        Path world = new File(serverRoot(), worldName).toPath(); if (!Files.isDirectory(world)) return;
         if (!Files.exists(world.resolve("level.dat")) && !Files.isDirectory(world.resolve("region"))) return;
         Path backup = world.resolveSibling(worldName + "-waterworld-backup-" + BACKUP_TIME.format(LocalDateTime.now()));
-        try {
-            try { Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE); }
-            catch (IOException ignored) { Files.move(world, backup); }
-            getLogger().warning("Старый ванильный мир сохранён в: " + backup.getFileName());
-        } catch (IOException e) {
-            getLogger().warning("Не удалось сохранить старый мир в резервную копию: " + e.getMessage());
-        }
+        try { try { Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE); } catch (IOException ignored) { Files.move(world, backup); }
+        } catch (IOException e) { getLogger().warning("Не удалось сохранить старый мир: " + e.getMessage()); }
     }
 
-    private File serverRoot() {
-        File plugins = getDataFolder().getParentFile();
-        File root = plugins == null ? null : plugins.getParentFile();
-        return root == null ? new File(".").getAbsoluteFile() : root;
-    }
+    private File serverRoot() { File plugins = getDataFolder().getParentFile(); File root = plugins == null ? null : plugins.getParentFile(); return root == null ? new File(".").getAbsoluteFile() : root; }
 
-    private void generateSpawnIslandChunks(World world) {
-        int radius = Math.max(16, getConfig().getInt("island.radius", 100));
-        int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
-        int cr = Math.max(1, (radius + 31) / 16);
-        int ccx = Math.floorDiv(cx, 16), ccz = Math.floorDiv(cz, 16);
-        for (int x = ccx - cr; x <= ccx + cr; x++) for (int z = ccz - cr; z <= ccz + cr; z++) world.getChunkAt(x, z).load(true);
+    private void generateSpawnArea(World world) {
+        int cx = Math.floorDiv(getConfig().getInt("island.center-x", 0), 16), cz = Math.floorDiv(getConfig().getInt("island.center-z", 0), 16);
+        int radius = Math.max(1, getConfig().getInt("spawn.preload-chunk-radius", 3));
+        for (int x = cx - radius; x <= cx + radius; x++) for (int z = cz - radius; z <= cz + radius; z++) world.getChunkAt(x, z).load(true);
     }
 
     private void setIslandSpawn(World world) {
         int cx = getConfig().getInt("island.center-x", 0), cz = getConfig().getInt("island.center-z", 0);
-        int radius = Math.min(32, Math.max(8, getConfig().getInt("island.radius", 100) / 4));
-        for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
-            int x = cx + dx, z = cz + dz, y = world.getHighestBlockYAt(x, z);
-            if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
-                    && world.getBlockAt(x, y + 1, z).isEmpty() && world.getBlockAt(x, y + 2, z).isEmpty()) {
-                world.setSpawnLocation(x, y + 1, z);
-                getLogger().info("Точка появления установлена на острове: " + x + ", " + (y + 1) + ", " + z);
-                return;
-            }
+        int[][] offsets = {{0,0},{8,0},{-8,0},{0,8},{0,-8},{12,12},{-12,12},{12,-12},{-12,-12}};
+        for (int[] offset : offsets) {
+            int x = cx + offset[0], z = cz + offset[1], y = world.getHighestBlockYAt(x, z);
+            if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK && world.getBlockAt(x, y + 1, z).isEmpty() && world.getBlockAt(x, y + 2, z).isEmpty()) { world.setSpawnLocation(x, y + 1, z); return; }
         }
-        getLogger().warning("Безопасная точка появления на острове не найдена.");
+        world.setSpawnLocation(cx, world.getHighestBlockYAt(cx, cz) + 1, cz);
     }
 
     private void startCustomTimeCycle(World world) {
         if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
-        int day = getConfig().getInt("time-cycle.day-duration-seconds", 600);
-        int night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
+        int day = getConfig().getInt("time-cycle.day-duration-seconds", 600), night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
         if (day <= 0 || night <= 0) return;
-        long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
-        double daySpeed = 12000.0D / (day * 20.0D), nightSpeed = 12000.0D / (night * 20.0D);
-        final double[] remainder = {0.0D};
+        long interval = Math.max(10L, getConfig().getLong("time-cycle.update-interval-ticks", 20L));
+        double daySpeed = 12000.0D / (day * 20.0D), nightSpeed = 12000.0D / (night * 20.0D); final double[] remainder = {0.0D};
         world.setGameRuleValue("doDaylightCycle", "false");
         timeCycleTask = getServer().getScheduler().runTaskTimer(this, () -> {
-            long time = Math.floorMod(world.getTime(), 24000L);
-            remainder[0] += (time < 12000L ? daySpeed : nightSpeed) * interval;
-            long advance = (long) remainder[0];
-            if (advance <= 0) return;
-            remainder[0] -= advance;
-            world.setTime((time + advance) % 24000L);
+            long time = Math.floorMod(world.getTime(), 24000L); remainder[0] += (time < 12000L ? daySpeed : nightSpeed) * interval;
+            long advance = (long) remainder[0]; if (advance > 0) { remainder[0] -= advance; world.setTime((time + advance) % 24000L); }
         }, interval, interval);
     }
 
-    @EventHandler
-    public void onChunkPopulate(ChunkPopulateEvent event) {
-        World world = event.getWorld();
-        if (!world.getName().equals(worldName)) return;
+    @EventHandler public void onChunkPopulate(ChunkPopulateEvent event) {
+        World world = event.getWorld(); if (!world.getName().equals(worldName)) return;
         Chunk chunk = event.getChunk();
-        if (mountain != null) mountain.generate(world, chunk.getX(), chunk.getZ());
-        if (cave != null) cave.generate(world, chunk.getX(), chunk.getZ());
-        if (decorator != null && isChunkNearAnyIsland(chunk.getX(), chunk.getZ(), world.getSeed())) decorator.decorate(world, chunk.getX(), chunk.getZ());
+        if (vegetation != null) vegetation.decorate(world, chunk.getX(), chunk.getZ());
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
+        if (mobs != null) mobs.populate(chunk);
     }
 
     private boolean isVillageTriggerChunk(int chunkX, int chunkZ) {
         int x = getConfig().getInt("island.center-x", 0) + getConfig().getInt("village.offset-x", 0);
         int z = getConfig().getInt("island.center-z", 0) + getConfig().getInt("village.offset-z", 55);
         return chunkX == Math.floorDiv(x, 16) && chunkZ == Math.floorDiv(z, 16);
-    }
-
-    private boolean isChunkNearAnyIsland(int chunkX, int chunkZ, long seed) {
-        IslandLayout layout = new IslandLayout(getConfig());
-        double x = chunkX * 16 + 8.0D, z = chunkZ * 16 + 8.0D;
-        for (IslandLayout.Island island : layout.get(seed)) {
-            int check = island.radius() + Math.max(20, island.radius() / 3) + 16;
-            double dx = x - island.x(), dz = z - island.z();
-            if (dx * dx + dz * dz <= (double) check * check) return true;
-        }
-        return false;
     }
 }
