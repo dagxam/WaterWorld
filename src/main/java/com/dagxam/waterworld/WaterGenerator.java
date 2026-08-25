@@ -160,7 +160,6 @@ public final class WaterGenerator extends ChunkGenerator {
         if (surface <= seaLevel + 2) return y < surface - 1 ? Material.SANDSTONE : Material.SAND;
         if (y < surface - 1) return Material.DIRT;
         if (island.main() && surface >= snowLine) return Material.SNOW_BLOCK;
-        if (island.type() == IslandLayout.IslandType.ROCKY && surface > seaLevel + islandHeight - 2) return Material.STONE;
         return Material.GRASS_BLOCK;
     }
 
@@ -176,14 +175,13 @@ public final class WaterGenerator extends ChunkGenerator {
                     if (dx * dx + dz * dz <= r * r) return switch (island.type()) {
                         case MAIN -> Biome.PLAINS;
                         case FOREST -> Biome.FOREST;
-                        case ROCKY -> Biome.WINDSWEPT_HILLS;
                         case TROPICAL -> Biome.JUNGLE;
                     };
                 }
                 return Biome.WARM_OCEAN;
             }
             @Override public List<Biome> getBiomes(WorldInfo worldInfo) {
-                return List.of(Biome.WARM_OCEAN, Biome.PLAINS, Biome.FOREST, Biome.WINDSWEPT_HILLS, Biome.JUNGLE);
+                return List.of(Biome.WARM_OCEAN, Biome.PLAINS, Biome.FOREST, Biome.JUNGLE);
             }
         };
     }
