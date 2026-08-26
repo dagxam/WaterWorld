@@ -11,7 +11,7 @@ import org.bukkit.util.noise.SimplexOctaveGenerator;
 import java.util.List;
 import java.util.Random;
 
-/** Генерирует ровный океан, зелёные острова и один плавный центральный холм. */
+/** Генерирует только океан, один центральный зелёный остров и малые зелёные острова. */
 public final class WaterGenerator extends ChunkGenerator {
     private final int seaLevel, oceanBaseHeight, oceanHeightAmplitude;
     private final double terrainScale;
@@ -25,13 +25,12 @@ public final class WaterGenerator extends ChunkGenerator {
     public WaterGenerator(FileConfiguration config) {
         seaLevel = config.getInt("sea-level", 63);
         oceanBaseHeight = config.getInt("ocean.base-height", 35);
-        oceanHeightAmplitude = config.getInt("ocean.height-amplitude", 8);
-        terrainScale = config.getDouble("ocean.terrain-scale", 0.005D);
+        oceanHeightAmplitude = Math.max(0, config.getInt("ocean.height-amplitude", 3));
+        terrainScale = config.getDouble("ocean.terrain-scale", 0.004D);
         islandEnabled = config.getBoolean("island.enabled", true);
 
-        // Единственный источник настроек холма. Старые mountain/peak-height больше не используются.
-        centralHillHeight = Math.max(0, config.getInt("island.central-hill.height", 9));
-        centralHillRadius = Math.max(8.0D, config.getDouble("island.central-hill.radius", 42.0D));
+        centralHillHeight = Math.max(0, config.getInt("island.central-hill.height", 7));
+        centralHillRadius = Math.max(16.0D, config.getDouble("island.central-hill.radius", 48.0D));
         centralHillOffsetX = config.getInt("island.central-hill.offset-x", 0);
         centralHillOffsetZ = config.getInt("island.central-hill.offset-z", -12);
         layout = new IslandLayout(config);
@@ -40,10 +39,10 @@ public final class WaterGenerator extends ChunkGenerator {
     private synchronized void ensureGenerators(long seed) {
         if (initializedSeed == seed && terrainGen != null) return;
         initializedSeed = seed;
-        terrainGen = new SimplexOctaveGenerator(new Random(seed), 4);
+        terrainGen = new SimplexOctaveGenerator(new Random(seed), 3);
         terrainGen.setScale(terrainScale);
         islandGen = new SimplexOctaveGenerator(new Random(seed + 2L), 2);
-        islandGen.setScale(0.045D);
+        islandGen.setScale(0.035D);
     }
 
     @Override
@@ -57,48 +56,42 @@ public final class WaterGenerator extends ChunkGenerator {
             for (int lz = 0; lz < 16; lz++) {
                 int x = chunkX * 16 + lx;
                 int z = chunkZ * 16 + lz;
-                IslandLayout.Island island = islandEnabled ? nearestIsland(islands, x, z) : null;
-                double distanceSq = island == null ? Double.MAX_VALUE : distanceSquared(x, z, island.x(), island.z());
+                IslandLayout.Island island = islandEnabled ? islandAt(islands, x, z) : null;
                 int floor = getOceanFloor(info, x, z);
-                int surface = island == null ? floor : getIslandSurface(x, z, distanceSq, island);
-                int fillTop = Math.max(surface, seaLevel);
+                int surface = island == null ? floor : getIslandSurface(x, z, island);
 
-                // ChunkData уже AIR по умолчанию: не выполняем дорогой ручной цикл очистки AIR.
-                for (int y = minHeight + 1; y <= Math.min(maxHeight, fillTop); y++) {
-                    if (island != null && distanceSq <= slopeRadiusSquared(island.radius())) {
-                        setIslandTerrain(data, lx, lz, y, surface);
-                    } else {
-                        setOceanTerrain(data, lx, lz, y, floor);
-                    }
+                // Вне точной области островов генерируется только океанское дно.
+                boolean islandColumn = island != null;
+                int top = Math.min(maxHeight, islandColumn ? Math.max(surface, seaLevel) : seaLevel);
+                for (int y = minHeight + 1; y <= top; y++) {
+                    if (islandColumn) setIslandTerrain(data, lx, lz, y, surface);
+                    else setOceanTerrain(data, lx, lz, y, floor);
                 }
                 data.setBlock(lx, minHeight, lz, Material.BEDROCK);
             }
         }
     }
 
-    private IslandLayout.Island nearestIsland(List<IslandLayout.Island> islands, int x, int z) {
-        IslandLayout.Island best = null;
-        double bestDistance = Double.MAX_VALUE;
+    private IslandLayout.Island islandAt(List<IslandLayout.Island> islands, int x, int z) {
         for (IslandLayout.Island island : islands) {
-            double d = distanceSquared(x, z, island.x(), island.z());
-            if (d < bestDistance) { bestDistance = d; best = island; }
+            int influence = getSlopeRadius(island.radius());
+            if (distanceSquared(x, z, island.x(), island.z()) <= (double) influence * influence) return island;
         }
-        return best;
+        return null;
     }
 
-    private int getSlopeRadius(int radius) { return radius + Math.max(18, radius / 2); }
-    private double slopeRadiusSquared(int radius) { double r = getSlopeRadius(radius); return r * r; }
+    private int getSlopeRadius(int radius) { return radius + Math.max(14, radius / 3); }
 
     private int getOceanFloor(WorldInfo info, int x, int z) {
         return clamp(oceanBaseHeight + (int) Math.round(terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude),
-                info.getMinHeight() + 2, seaLevel - 1);
+                info.getMinHeight() + 2, seaLevel - 10);
     }
 
     private void setOceanTerrain(ChunkData data, int lx, int lz, int y, int floor) {
         if (y > floor) data.setBlock(lx, y, lz, Material.WATER);
         else if (y <= 0) data.setBlock(lx, y, lz, Material.DEEPSLATE);
-        else if (y < floor - 5) data.setBlock(lx, y, lz, Material.STONE);
-        else if (y < floor - 2) data.setBlock(lx, y, lz, Material.GRAVEL);
+        else if (y < floor - 6) data.setBlock(lx, y, lz, Material.STONE);
+        else if (y < floor - 3) data.setBlock(lx, y, lz, Material.GRAVEL);
         else data.setBlock(lx, y, lz, Material.SAND);
     }
 
@@ -109,50 +102,50 @@ public final class WaterGenerator extends ChunkGenerator {
         }
         if (y <= 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
         if (surface <= seaLevel) {
+            // Песок только в узкой прибрежной полосе, затем сразу естественный грунт/камень под водой.
             data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
             return;
         }
         data.setBlock(lx, y, lz, y < surface - 5 ? Material.STONE : y < surface - 1 ? Material.DIRT : Material.GRASS_BLOCK);
     }
 
-    private int getIslandSurface(int x, int z, double distanceSq, IslandLayout.Island island) {
+    private int getIslandSurface(int x, int z, IslandLayout.Island island) {
+        double distance = Math.sqrt(distanceSquared(x, z, island.x(), island.z()));
         int radius = island.radius();
         int slopeRadius = getSlopeRadius(radius);
-        double slopeRadiusSq = (double) slopeRadius * slopeRadius;
         double ocean = getLocalOceanHeight(x, z);
-        if (distanceSq >= slopeRadiusSq) return (int) Math.round(ocean);
+        if (distance >= slopeRadius) return (int) Math.round(ocean);
 
-        double distance = Math.sqrt(distanceSq);
         if (distance <= radius) {
-            double edgeFactor = 1.0D - distance / radius;
-            double coastFactor = Math.pow(Math.max(0.0D, edgeFactor), 1.8D);
-            double broadNoise = islandGen.noise(x, z, 0.5D, 0.5D, true) * island.variation();
-            double base = seaLevel + 1.0D + coastFactor * island.height() + broadNoise;
+            double edge = Math.max(0.0D, 1.0D - distance / radius);
+            double coast = Math.pow(edge, 1.45D);
+            double noise = islandGen.noise(x, z, 0.5D, 0.5D, true) * island.variation();
+            double base = seaLevel + 1.0D + coast * island.height() + noise;
 
-            // Только главный остров получает широкий невысокий холм, без каменного пика.
+            // Центральный рельеф — только широкий мягкий холм, без пиков и каменных стен.
             if (island.main() && centralHillHeight > 0) {
-                int hx = island.x() + centralHillOffsetX;
-                int hz = island.z() + centralHillOffsetZ;
+                double hx = island.x() + centralHillOffsetX;
+                double hz = island.z() + centralHillOffsetZ;
                 double dx = x - hx, dz = z - hz;
-                double hillDistanceSq = dx * dx + dz * dz;
-                if (hillDistanceSq < centralHillRadius * centralHillRadius) {
-                    double hillFactor = 1.0D - Math.sqrt(hillDistanceSq) / centralHillRadius;
-                    // Smooth dome: широкий холм, а не острый конус.
-                    base += hillFactor * hillFactor * (3.0D - 2.0D * hillFactor) * centralHillHeight;
+                double d = Math.sqrt(dx * dx + dz * dz);
+                if (d < centralHillRadius) {
+                    double t = 1.0D - d / centralHillRadius;
+                    double smooth = t * t * (3.0D - 2.0D * t);
+                    base += smooth * centralHillHeight;
                 }
             }
-            return clamp((int) Math.round(base), seaLevel + 1, seaLevel + island.height() + centralHillHeight + 2);
+            return clamp((int) Math.round(base), seaLevel + 1, seaLevel + island.height() + centralHillHeight + 1);
         }
 
-        // Плавная подводная отмель без обрыва.
+        // Длинная плавная отмель: берег не обрывается стеной в океан.
         double t = (distance - radius) / (double) (slopeRadius - radius);
         t = t * t * (3.0D - 2.0D * t);
-        return (int) Math.round((seaLevel + 0.25D) + (ocean - (seaLevel + 0.25D)) * t);
+        return (int) Math.round((seaLevel + 0.5D) + (ocean - (seaLevel + 0.5D)) * t);
     }
 
     private double getLocalOceanHeight(int x, int z) {
         return clampDouble(oceanBaseHeight + terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude,
-                24.0D, seaLevel - 1.0D);
+                30.0D, seaLevel - 10.0D);
     }
 
     private static double distanceSquared(int x, int z, int cx, int cz) {
@@ -169,7 +162,8 @@ public final class WaterGenerator extends ChunkGenerator {
             @Override
             public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
                 for (IslandLayout.Island island : layout.get(worldInfo.getSeed())) {
-                    if (distanceSquared(x, z, island.x(), island.z()) <= (double) island.radius() * island.radius()) return Biome.PLAINS;
+                    int influence = getSlopeRadius(island.radius());
+                    if (distanceSquared(x, z, island.x(), island.z()) <= (double) influence * influence) return Biome.PLAINS;
                 }
                 return Biome.WARM_OCEAN;
             }
