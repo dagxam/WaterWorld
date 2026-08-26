@@ -1,13 +1,10 @@
 package com.dagxam.waterworld;
 
-import org.bukkit.Chunk;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Chest;
-import org.bukkit.entity.ItemFrame;
-import org.bukkit.entity.EntityType;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapCanvas;
@@ -20,10 +17,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/** Спрятанные карты сокровищ на островах и соответствующие бочки-сокровища. */
+/**
+ * Генерирует на островах небольшую сеть ПОДЗЕМНЫХ сундуков.
+ *
+ * На каждом острове создаётся от 3 до 7 тайников. Часть сундуков содержит карту,
+ * ведущую к другому закопанному сундуку, остальные содержат ценные предметы.
+ */
 public final class TreasureDecorator {
+    private static final long TREASURE_SALT = 0x5452454153555245L;
+
     private final JavaPlugin plugin;
-    private final NamespacedKey treasureBarrelKey;
+    private final NamespacedKey treasureChestKey;
     private final NamespacedKey treasureMapKey;
     private final IslandLayout layout;
     private final int seaLevel;
@@ -32,175 +36,260 @@ public final class TreasureDecorator {
         this.plugin = plugin;
         this.seaLevel = seaLevel;
         this.layout = layout;
-        this.treasureBarrelKey = new NamespacedKey(plugin, "treasure-barrel-v1");
-        this.treasureMapKey = new NamespacedKey(plugin, "treasure-map-v1");
+        this.treasureChestKey = new NamespacedKey(plugin, "buried-island-treasure-v2");
+        this.treasureMapKey = new NamespacedKey(plugin, "treasure-map-v2");
     }
 
-    /** Детерминированно создаёт несколько цепочек карта -> бочка на всех зелёных островах. */
+    /**
+     * Вызывается для чанка. Раскладка сундуков заранее вычисляется от seed мира,
+     * поэтому каждый сундук создаётся только в своём чанке и не дублируется.
+     */
     public void decorate(World world, int chunkX, int chunkZ) {
-        List<IslandLayout.Island> islands = layout.get(world.getSeed());
+        for (IslandLayout.Island island : layout.get(world.getSeed())) {
+            if (!isNearIslandChunk(chunkX, chunkZ, island)) continue;
+
+            List<TreasureSite> sites = createSites(world, island);
+            if (sites.isEmpty()) continue;
+
+            for (TreasureSite site : sites) {
+                if (Math.floorDiv(site.x, 16) != chunkX || Math.floorDiv(site.z, 16) != chunkZ) continue;
+                placeTreasureChest(world, site, island, sites);
+            }
+        }
+    }
+
+    private boolean isNearIslandChunk(int chunkX, int chunkZ, IslandLayout.Island island) {
+        int minX = chunkX * 16 - 8;
+        int minZ = chunkZ * 16 - 8;
+        int maxX = chunkX * 16 + 23;
+        int maxZ = chunkZ * 16 + 23;
+        int radius = island.radius() + 4;
+        return island.x() >= minX - radius && island.x() <= maxX + radius
+                && island.z() >= minZ - radius && island.z() <= maxZ + radius;
+    }
+
+    /** От 3 до 7 хорошо разнесённых точек на суше острова. */
+    private List<TreasureSite> createSites(World world, IslandLayout.Island island) {
+        long salt = TREASURE_SALT
+                ^ ((long) island.x() * 341873128712L)
+                ^ ((long) island.z() * 132897987541L)
+                ^ ((long) island.radius() * 42317861L);
+        Random random = new Random(world.getSeed() ^ salt);
+
+        int count = 3 + random.nextInt(5); // 3..7
+        int mapCount = count >= 5 ? 2 : 1;
+        List<TreasureSite> sites = new ArrayList<>();
+
+        int usableRadius = Math.max(10, island.radius() - 7);
+        int minDistance = Math.max(8, Math.min(16, island.radius() / 3));
+
+        for (int index = 0; index < count; index++) {
+            TreasureSite site = null;
+            for (int attempt = 0; attempt < 80; attempt++) {
+                int x = island.x() + random.nextInt(usableRadius * 2 + 1) - usableRadius;
+                int z = island.z() + random.nextInt(usableRadius * 2 + 1) - usableRadius;
+                long dx = x - island.x();
+                long dz = z - island.z();
+                if (dx * dx + dz * dz > (long) usableRadius * usableRadius) continue;
+
+                boolean tooClose = false;
+                for (TreasureSite other : sites) {
+                    long ox = x - other.x;
+                    long oz = z - other.z;
+                    if (ox * ox + oz * oz < (long) minDistance * minDistance) {
+                        tooClose = true;
+                        break;
+                    }
+                }
+                if (tooClose) continue;
+
+                int surfaceY = world.getHighestBlockYAt(x, z);
+                if (surfaceY <= seaLevel + 1) continue;
+                Material surface = world.getBlockAt(x, surfaceY, z).getType();
+                if (surface != Material.GRASS_BLOCK && surface != Material.DIRT
+                        && surface != Material.COARSE_DIRT && surface != Material.PODZOL) continue;
+
+                int depth = 2 + random.nextInt(4); // 2..5 блоков под поверхностью
+                int y = surfaceY - depth;
+                if (y <= world.getMinHeight() + 2 || y >= surfaceY - 1) continue;
+
+                boolean mapChest = index < mapCount;
+                site = new TreasureSite(x, y, z, surfaceY, mapChest, index);
+                break;
+            }
+            if (site != null) sites.add(site);
+        }
+
+        // На маленьком острове может не хватить точек: гарантируем минимум 3 попытками ближе к центру.
+        int fallback = 0;
+        while (sites.size() < 3 && fallback < 40) {
+            int x = island.x() + random.nextInt(Math.max(7, usableRadius)) - Math.max(3, usableRadius / 2);
+            int z = island.z() + random.nextInt(Math.max(7, usableRadius)) - Math.max(3, usableRadius / 2);
+            int surfaceY = world.getHighestBlockYAt(x, z);
+            if (surfaceY > seaLevel + 1) {
+                Material surface = world.getBlockAt(x, surfaceY, z).getType();
+                if (surface == Material.GRASS_BLOCK || surface == Material.DIRT || surface == Material.COARSE_DIRT) {
+                    sites.add(new TreasureSite(x, surfaceY - 3, z, surfaceY, sites.size() < mapCount, sites.size()));
+                }
+            }
+            fallback++;
+        }
+
+        return sites;
+    }
+
+    private void placeTreasureChest(World world, TreasureSite site, IslandLayout.Island island, List<TreasureSite> sites) {
+        Block block = world.getBlockAt(site.x, site.y, site.z);
+
+        // Не перезаписываем уже созданный тайник при повторной загрузке чанка.
+        if (block.getType() == Material.CHEST && block.getState() instanceof Chest existing
+                && existing.getPersistentDataContainer().has(treasureChestKey, PersistentDataType.BYTE)) {
+            return;
+        }
+
+        // Если точка оказалась в воде, пещере или слишком близко к поверхности — пропускаем её.
+        for (int y = site.y; y <= site.surfaceY; y++) {
+            Material type = world.getBlockAt(site.x, y, site.z).getType();
+            if (type == Material.WATER || type == Material.LAVA || type == Material.AIR) return;
+        }
+
+        block.setType(Material.CHEST, false);
+        if (!(block.getState() instanceof Chest chest)) return;
+
+        chest.getPersistentDataContainer().set(treasureChestKey, PersistentDataType.BYTE, (byte) 1);
+        chest.getInventory().clear();
+
         Random random = new Random(world.getSeed()
-                ^ ((long) chunkX * 341873128712L)
-                ^ ((long) chunkZ * 132897987541L)
-                ^ 0x5452454153555245L);
+                ^ ((long) site.x * 341873128712L)
+                ^ ((long) site.z * 132897987541L)
+                ^ ((long) site.y * 42317861L)
+                ^ TREASURE_SALT);
 
-        for (IslandLayout.Island island : islands) {
-            if (!isIslandChunk(chunkX, chunkZ, island)) continue;
-
-            // Не размещаем больше одной новой цепочки в каждом подходящем чанке.
-            if (random.nextInt(100) >= 6) continue;
-            createTreasureChain(world, island, random);
+        if (site.mapChest) {
+            TreasureSite target = chooseTarget(site, sites, random);
+            if (target != null) {
+                chest.getInventory().addItem(createTreasureMap(world, site, target));
+            }
+            addChance(chest, random, Material.COMPASS, 0.70, 1);
+            addChance(chest, random, Material.PAPER, 0.50, 2 + random.nextInt(4));
+            addChance(chest, random, Material.GOLD_INGOT, 0.55, 2 + random.nextInt(5));
+            addChance(chest, random, Material.EMERALD, 0.30, 1 + random.nextInt(3));
+        } else {
+            fillValuableTreasure(chest, random);
         }
+
+        chest.update(true, false);
     }
 
-    private boolean isIslandChunk(int chunkX, int chunkZ, IslandLayout.Island island) {
-        int minX = chunkX * 16;
-        int minZ = chunkZ * 16;
-        int maxX = minX + 15;
-        int maxZ = minZ + 15;
-        int r = island.radius() + 4;
-        int cx = island.x();
-        int cz = island.z();
-        return cx >= minX - r && cx <= maxX + r && cz >= minZ - r && cz <= maxZ + r;
-    }
-
-    private void createTreasureChain(World world, IslandLayout.Island island, Random random) {
-        LocationPoint mapSpot = findSurfaceSpot(world, island, random);
-        if (mapSpot == null) return;
-
-        int maxOffset = Math.max(8, Math.min(45, island.radius() - 5));
-        LocationPoint barrelSpot = null;
-        for (int attempt = 0; attempt < 24; attempt++) {
-            int bx = island.x() + random.nextInt(maxOffset * 2 + 1) - maxOffset;
-            int bz = island.z() + random.nextInt(maxOffset * 2 + 1) - maxOffset;
-            if ((long) (bx - island.x()) * (bx - island.x()) + (long) (bz - island.z()) * (bz - island.z()) > (long) Math.max(6, island.radius() - 5) * Math.max(6, island.radius() - 5)) continue;
-            int by = world.getHighestBlockYAt(bx, bz);
-            if (by <= seaLevel || world.getBlockAt(bx, by, bz).getType() != Material.GRASS_BLOCK) continue;
-            barrelSpot = new LocationPoint(bx, by, bz);
-            break;
+    /** Карта всегда ведёт к другому сундуку, а не к самой себе. */
+    private TreasureSite chooseTarget(TreasureSite source, List<TreasureSite> sites, Random random) {
+        List<TreasureSite> targets = new ArrayList<>();
+        for (TreasureSite site : sites) {
+            if (site.index != source.index) targets.add(site);
         }
-        if (barrelSpot == null) return;
-
-        placeHiddenMapChest(world, mapSpot, barrelSpot, island, random);
-        placeBuriedBarrel(world, barrelSpot, random);
+        if (targets.isEmpty()) return null;
+        return targets.get(random.nextInt(targets.size()));
     }
 
-    private LocationPoint findSurfaceSpot(World world, IslandLayout.Island island, Random random) {
-        int maxOffset = Math.max(6, Math.min(35, island.radius() - 6));
-        for (int attempt = 0; attempt < 30; attempt++) {
-            int x = island.x() + random.nextInt(maxOffset * 2 + 1) - maxOffset;
-            int z = island.z() + random.nextInt(maxOffset * 2 + 1) - maxOffset;
-            if ((long) (x - island.x()) * (x - island.x()) + (long) (z - island.z()) * (z - island.z()) > (long) Math.max(5, island.radius() - 6) * Math.max(5, island.radius() - 6)) continue;
-            int y = world.getHighestBlockYAt(x, z);
-            if (y > seaLevel && world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
-                    && world.getBlockAt(x, y + 1, z).isEmpty()) return new LocationPoint(x, y, z);
-        }
-        return null;
-    }
-
-    private void placeHiddenMapChest(World world, LocationPoint spot, LocationPoint treasure, IslandLayout.Island island, Random random) {
-        Block hidden = world.getBlockAt(spot.x, spot.y + 1, spot.z);
-        if (!hidden.isEmpty()) return;
-        hidden.setType(Material.CHEST);
-        if (!(hidden.getState() instanceof Chest chest)) return;
-
-        ItemStack map = createTreasureMap(world, island, treasure.x, treasure.z, random);
-        chest.getInventory().addItem(map);
-        if (random.nextBoolean()) chest.getInventory().addItem(new ItemStack(Material.COMPASS));
-        if (random.nextBoolean()) chest.getInventory().addItem(new ItemStack(Material.TORCH, 2));
-        chest.update();
-    }
-
-    private ItemStack createTreasureMap(World world, IslandLayout.Island island, int treasureX, int treasureZ, Random random) {
+    private ItemStack createTreasureMap(World world, TreasureSite source, TreasureSite target) {
         MapView view = plugin.getServer().createMap(world);
         view.setScale(MapView.Scale.NORMAL);
         view.setTrackingPosition(false);
         view.setUnlimitedTracking(false);
-        view.setCenterX(island.x());
-        view.setCenterZ(island.z());
+        view.setCenterX(source.x);
+        view.setCenterZ(source.z);
         view.getRenderers().clear();
-        view.addRenderer(new TreasureMapRenderer(treasureX, treasureZ, island.x(), island.z()));
+        view.addRenderer(new TreasureMapRenderer(source.x, source.z, target.x, target.z));
 
         ItemStack item = new ItemStack(Material.FILLED_MAP);
         MapMeta meta = (MapMeta) item.getItemMeta();
         if (meta == null) return item;
         meta.setMapView(view);
-        meta.setDisplayName("§6§lКарта спрятанного сокровища");
+        meta.setDisplayName("§6§lКарта к спрятанному сундуку");
         meta.getPersistentDataContainer().set(treasureMapKey, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
         return item;
     }
 
-    private void placeBuriedBarrel(World world, LocationPoint surface, Random random) {
-        int depth = 2 + random.nextInt(4);
-        int x = surface.x;
-        int y = Math.max(world.getMinHeight() + 2, surface.y - depth);
-        int z = surface.z;
+    private void fillValuableTreasure(Chest chest, Random random) {
+        // Обычные ценности.
+        addChance(chest, random, Material.DIAMOND, 0.65, 1 + random.nextInt(4));
+        addChance(chest, random, Material.EMERALD, 0.85, 3 + random.nextInt(7));
+        addChance(chest, random, Material.GOLD_INGOT, 0.95, 4 + random.nextInt(10));
+        addChance(chest, random, Material.IRON_INGOT, 0.85, 6 + random.nextInt(12));
+        addChance(chest, random, Material.GOLDEN_APPLE, 0.20, 1);
+        addChance(chest, random, Material.ENDER_PEARL, 0.30, 1 + random.nextInt(2));
+        addChance(chest, random, Material.EXPERIENCE_BOTTLE, 0.35, 3 + random.nextInt(6));
 
-        for (int i = surface.y; i > y; i--) {
-            if (world.getBlockAt(x, i, z).getType() == Material.GRASS_BLOCK || world.getBlockAt(x, i, z).getType() == Material.DIRT) {
-                world.getBlockAt(x, i, z).setType(Material.DIRT);
-            }
+        // Редкая экипировка.
+        addChance(chest, random, Material.DIAMOND_SWORD, 0.16, 1);
+        addChance(chest, random, Material.DIAMOND_PICKAXE, 0.14, 1);
+        addChance(chest, random, Material.DIAMOND_HELMET, 0.10, 1);
+        addChance(chest, random, Material.DIAMOND_CHESTPLATE, 0.08, 1);
+        addChance(chest, random, Material.DIAMOND_LEGGINGS, 0.08, 1);
+        addChance(chest, random, Material.DIAMOND_BOOTS, 0.10, 1);
+
+        // Очень редкий главный приз — незерит.
+        addChance(chest, random, Material.NETHERITE_SWORD, 0.035, 1);
+        addChance(chest, random, Material.NETHERITE_PICKAXE, 0.025, 1);
+        addChance(chest, random, Material.NETHERITE_HELMET, 0.018, 1);
+        addChance(chest, random, Material.NETHERITE_CHESTPLATE, 0.012, 1);
+        addChance(chest, random, Material.NETHERITE_LEGGINGS, 0.012, 1);
+        addChance(chest, random, Material.NETHERITE_BOOTS, 0.018, 1);
+    }
+
+    private void addChance(Chest chest, Random random, Material material, double chance, int amount) {
+        if (random.nextDouble() <= chance) {
+            chest.getInventory().addItem(new ItemStack(material, amount));
         }
+    }
 
-        Block block = world.getBlockAt(x, y, z);
-        block.setType(Material.BARREL);
-        if (!(block.getState() instanceof org.bukkit.block.Barrel barrel)) return;
-        barrel.getPersistentDataContainer().set(treasureBarrelKey, PersistentDataType.BYTE, (byte) 1);
-        fillTreasure(barrel, random);
-        barrel.update();
+    private static final class TreasureSite {
+        private final int x;
+        private final int y;
+        private final int z;
+        private final int surfaceY;
+        private final boolean mapChest;
+        private final int index;
 
-        // Ставим несколько блоков грунта сверху, чтобы бочка действительно была спрятана.
-        for (int i = y + 1; i <= surface.y; i++) {
-            world.getBlockAt(x, i, z).setType(Material.DIRT);
+        private TreasureSite(int x, int y, int z, int surfaceY, boolean mapChest, int index) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.surfaceY = surfaceY;
+            this.mapChest = mapChest;
+            this.index = index;
         }
-        if (surface.y > 0) world.getBlockAt(x, surface.y, z).setType(Material.GRASS_BLOCK);
-    }
-
-    private void fillTreasure(org.bukkit.block.Barrel barrel, Random random) {
-        addChance(barrel, Material.DIAMOND, 0.45, 1 + random.nextInt(2));
-        addChance(barrel, Material.EMERALD, 0.80, 2 + random.nextInt(5));
-        addChance(barrel, Material.GOLD_INGOT, 1.00, 4 + random.nextInt(8));
-        addChance(barrel, Material.IRON_INGOT, 1.00, 5 + random.nextInt(12));
-        addChance(barrel, Material.GOLDEN_APPLE, 0.12, 1);
-        addChance(barrel, Material.HEART_OF_THE_SEA, 0.08, 1);
-        addChance(barrel, Material.ENDER_PEARL, 0.25, 1 + random.nextInt(2));
-        addChance(barrel, Material.OBSIDIAN, 0.30, 2 + random.nextInt(5));
-        addChance(barrel, Material.EXPERIENCE_BOTTLE, 0.35, 3 + random.nextInt(6));
-    }
-
-    private void addChance(org.bukkit.block.Barrel barrel, Material material, double chance, int amount) {
-        if (Math.random() <= chance) barrel.getInventory().addItem(new ItemStack(material, amount));
-    }
-
-    private static final class LocationPoint {
-        private final int x, y, z;
-        private LocationPoint(int x, int y, int z) { this.x = x; this.y = y; this.z = z; }
     }
 
     private static final class TreasureMapRenderer extends MapRenderer {
-        private final int treasureX, treasureZ, centerX, centerZ;
+        private final int sourceX;
+        private final int sourceZ;
+        private final int targetX;
+        private final int targetZ;
         private boolean rendered;
 
-        private TreasureMapRenderer(int treasureX, int treasureZ, int centerX, int centerZ) {
+        private TreasureMapRenderer(int sourceX, int sourceZ, int targetX, int targetZ) {
             super(false);
-            this.treasureX = treasureX;
-            this.treasureZ = treasureZ;
-            this.centerX = centerX;
-            this.centerZ = centerZ;
+            this.sourceX = sourceX;
+            this.sourceZ = sourceZ;
+            this.targetX = targetX;
+            this.targetZ = targetZ;
         }
 
         @Override
         public void render(MapView map, MapCanvas canvas, org.bukkit.entity.Player player) {
             if (rendered) return;
             rendered = true;
-            int px = Math.max(0, Math.min(127, 64 + Math.round((treasureX - centerX) * 1.2f)));
-            int pz = Math.max(0, Math.min(127, 64 + Math.round((treasureZ - centerZ) * 1.2f)));
-            canvas.setPixel(px, pz, (byte) 10);
-            if (px > 0) canvas.setPixel(px - 1, pz, (byte) 10);
-            if (px < 127) canvas.setPixel(px + 1, pz, (byte) 10);
-            if (pz > 0) canvas.setPixel(px, pz - 1, (byte) 10);
-            if (pz < 127) canvas.setPixel(px, pz + 1, (byte) 10);
+
+            int px = Math.max(0, Math.min(127, 64 + Math.round((targetX - sourceX) * 1.2f)));
+            int pz = Math.max(0, Math.min(127, 64 + Math.round((targetZ - sourceZ) * 1.2f)));
+            byte marker = 10;
+            canvas.setPixel(px, pz, marker);
+            if (px > 0) canvas.setPixel(px - 1, pz, marker);
+            if (px < 127) canvas.setPixel(px + 1, pz, marker);
+            if (pz > 0) canvas.setPixel(px, pz - 1, marker);
+            if (pz < 127) canvas.setPixel(px, pz + 1, marker);
         }
     }
 }
