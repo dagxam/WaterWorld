@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.1 — optimized islands, villages and treasures
+# WaterWorld 3.2 — islands, villages, treasures and living ocean
 # ==========================================================
 world:
   name: waterworld
@@ -58,19 +58,25 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
-# The main island always gets a village if terrain allows it.
-# Large secondary islands get one according to the chance below.
+# Beautiful living ocean floor. These values are intentionally moderate for performance.
+ocean-life:
+  enabled: true
+  attempts-per-chunk: 14
+  seagrass-chance-percent: 42
+  kelp-chance-percent: 22
+  coral-chance-percent: 12
+
+# The main island and both additional islands receive villages when terrain allows it.
 village:
   enabled: true
-  min-island-radius: 48
-  additional-island-chance: 0.55
+  min-island-radius: 40
+  additional-island-chance: 1.0
 
 treasures:
   enabled: true
-  # Each island receives a deterministic number of hidden barrels.
   min-per-island: 1
   max-per-island: 3
 
 animals:
   enabled: true
-  ocean-radius: 600
+  ocean-radius: 900
