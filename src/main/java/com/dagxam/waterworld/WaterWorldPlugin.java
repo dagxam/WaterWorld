@@ -24,12 +24,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
 
-/** WaterWorld 3.1 main-world generator with lightweight population, villages and buried treasures. */
+/** WaterWorld 3.2 main-world generator with islands, villages, treasures and a living ocean. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private WaterGenerator generator;
     private NaturalIslandDecorator vegetation;
+    private OceanDecorator ocean;
     private VillageDecorator village;
     private TreasureDecorator treasures;
     private MobDecorator mobs;
@@ -48,6 +49,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void configurePopulation() {
         vegetation = getConfig().getBoolean("vegetation.enabled", true) ? new NaturalIslandDecorator(getConfig(), generator.layout()) : null;
+        ocean = getConfig().getBoolean("ocean-life.enabled", true) ? new OceanDecorator(getConfig(), generator.layout()) : null;
         treasures = getConfig().getBoolean("treasures.enabled", true) ? new TreasureDecorator(getConfig(), generator.layout()) : null;
         if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(getConfig(), generator.layout(), treasures == null ? new TreasureDecorator(getConfig(), generator.layout()) : treasures);
         if (getConfig().getBoolean("animals.enabled", true)) mobs = new MobDecorator(this, getConfig(), generator.layout());
@@ -58,7 +60,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         World world = Bukkit.getWorld(worldName); if (world == null && !Bukkit.getWorlds().isEmpty()) world = Bukkit.getWorlds().getFirst();
         if (world == null || world.getGenerator() == null) { getLogger().severe("Основной мир WaterWorld не был загружен с генератором. Сервер остановлен."); Bukkit.shutdown(); return; }
         worldName = world.getName(); generateSpawnArea(world); setIslandSpawn(world); startCustomTimeCycle(world); if (mobs != null) mobs.initializeWorld(world);
-        getLogger().info("WaterWorld 3.1 готов: деревни и клады включены для островов.");
+        getLogger().info("WaterWorld 3.2 готов: острова, деревни, клады и живой океан включены.");
     }
 
     private String readLevelName() { Properties p = new Properties(); File file = new File(serverRoot(), "server.properties"); if (file.isFile()) try (Reader r = Files.newBufferedReader(file.toPath())) { p.load(r); } catch (IOException e) { getLogger().warning(e.getMessage()); } String name = p.getProperty("level-name", "world").trim(); return name.isEmpty() ? "world" : name; }
@@ -75,6 +77,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @EventHandler public void onChunkPopulate(ChunkPopulateEvent event) {
         World world = event.getWorld(); if (!world.getName().equals(worldName)) return; Chunk chunk = event.getChunk();
         if (vegetation != null) vegetation.decorate(world, chunk.getX(), chunk.getZ());
+        if (ocean != null) ocean.decorate(world, chunk.getX(), chunk.getZ());
         if (treasures != null) treasures.populateChunk(world, chunk.getX(), chunk.getZ());
         if (village != null) for (IslandLayout.Island island : generator.layout().get(world.getSeed())) if ((island.x() >> 4) == chunk.getX() && (island.z() >> 4) == chunk.getZ()) village.generate(world, island);
         if (mobs != null) mobs.populate(chunk);
