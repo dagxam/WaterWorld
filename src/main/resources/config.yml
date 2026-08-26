@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld — архипелаг: зелёный главный остров + 2 малых острова
+# WaterWorld — один главный зелёный остров + два малых острова
 # ==========================================================
 
 world:
@@ -13,56 +13,56 @@ time-cycle:
   night-duration-seconds: 600
   update-interval-ticks: 1
 
+# Океан должен быть спокойным: без каменных материков и огромных подводных гор.
 ocean:
   base-height: 35
-  height-amplitude: 8
-  terrain-scale: 0.005
+  height-amplitude: 3
+  terrain-scale: 0.004
 
 island:
   enabled: true
   center-x: 0
   center-z: 0
   radius: 100
-  height: 10
-  variation: 1.8
-  noise-scale: 0.045
+  height: 9
+  variation: 1.2
+  noise-scale: 0.035
   biome: PLAINS
 
-  # Старый отдельный каменный генератор гор полностью отключён.
+  # Старый каменный генератор гор полностью выключен.
   mountain:
     enabled: false
 
-  # Это именно широкий невысокий холм, не каменная гора.
+  # Только широкий зелёный холм в центре, без острых вершин и снега.
   central-hill:
-    height: 9
-    radius: 42
+    height: 7
+    radius: 48
     offset-x: 0
     offset-z: -12
 
-# Ровно два малых острова. Они фиксированы и находятся далеко от главного.
-# Никаких случайных каменных островов генератор больше не создаёт.
+# Ровно два небольших зелёных острова, далеко от главного.
 additional-islands:
   count: 2
-  radius: 28
-  height: 5
-  variation: 1.0
-  min-distance: 240
+  radius: 26
+  height: 4
+  variation: 0.7
+  min-distance: 260
   max-distance: 420
   islands:
     forest:
       enabled: true
       x: 0
-      z: -300
-      radius: 28
-      height: 5
-      variation: 1.0
+      z: -320
+      radius: 26
+      height: 4
+      variation: 0.7
     tropical:
       enabled: true
-      x: 240
-      z: 280
-      radius: 24
-      height: 4
-      variation: 0.8
+      x: 280
+      z: 300
+      radius: 22
+      height: 3
+      variation: 0.6
 
 vegetation:
   enabled: true
