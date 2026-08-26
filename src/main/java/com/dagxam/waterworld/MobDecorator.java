@@ -2,6 +2,7 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Chunk;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -17,11 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * Лёгкая балансировка живности.
- * Вместо getNearbyEntities() при каждом чанке используются кэшированные счётчики.
- * Полная сверка выполняется редко, поэтому генерация чанков не тратит время на сканирование мира.
- */
+/** Живая фауна островов и отдельная фауна океана, включая опасных подводных мобов. */
 public final class MobDecorator implements Listener {
     private final JavaPlugin plugin;
     private final int seaLevel;
@@ -52,18 +49,23 @@ public final class MobDecorator implements Listener {
         landCaps.put(EntityType.WOLF, 3);
         landCaps.put(EntityType.CAT, 3);
 
-        oceanCaps.put(EntityType.TROPICAL_FISH, 24);
-        oceanCaps.put(EntityType.PUFFERFISH, 8);
-        oceanCaps.put(EntityType.COD, 10);
-        oceanCaps.put(EntityType.SALMON, 10);
-        oceanCaps.put(EntityType.SQUID, 8);
-        oceanCaps.put(EntityType.GLOW_SQUID, 4);
-        oceanCaps.put(EntityType.DOLPHIN, 4);
+        // Мирные и обычные морские существа.
+        oceanCaps.put(EntityType.TROPICAL_FISH, 48);
+        oceanCaps.put(EntityType.PUFFERFISH, 12);
+        oceanCaps.put(EntityType.COD, 24);
+        oceanCaps.put(EntityType.SALMON, 24);
+        oceanCaps.put(EntityType.SQUID, 16);
+        oceanCaps.put(EntityType.GLOW_SQUID, 8);
+        oceanCaps.put(EntityType.DOLPHIN, 8);
+
+        // Опасные обитатели глубин. Лимиты специально небольшие, чтобы океан был опасным,
+        // но не превращался в бесконечную толпу мобов.
+        oceanCaps.put(EntityType.DROWNED, 18);
+        oceanCaps.put(EntityType.GUARDIAN, 8);
     }
 
     public void start() {
         for (World world : plugin.getServer().getWorlds()) reconcile(world);
-        // Редкая сверка вместо дорогого поиска сущностей при каждом ChunkPopulate.
         plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
             for (World world : plugin.getServer().getWorlds()) reconcile(world);
         }, 12000L, 12000L);
@@ -78,14 +80,15 @@ public final class MobDecorator implements Listener {
         ThreadLocalRandom random = ThreadLocalRandom.current();
 
         if (isInsideIsland(x, z)) {
-            // Реже запускаем ручное добавление: ванильный спавн остаётся главным.
             if (random.nextInt(100) < 12) spawnLandMob(world, chunk, random);
             return;
         }
 
-        double distance = distance(x, z);
-        if (distance >= islandRadius + 18 && distance <= oceanRadius && random.nextInt(100) < 9) {
-            spawnOceanMob(world, chunk, random);
+        if (isInsideOcean(x, z) && random.nextInt(100) < 24) {
+            // В большинстве океанских чанков появляются косяки и обычные морские существа.
+            // Реже появляются утопленники и стражи глубин.
+            if (random.nextInt(100) < 16) spawnHostileOceanMob(world, chunk, random);
+            else spawnOceanMob(world, chunk, random);
         }
     }
 
@@ -107,16 +110,32 @@ public final class MobDecorator implements Listener {
     private void spawnOceanMob(World world, Chunk chunk, ThreadLocalRandom random) {
         EntityType type = weightedOceanType(random);
         if (getCount(world, type) >= oceanCaps.getOrDefault(type, 0)) return;
-        for (int attempt = 0; attempt < 5; attempt++) {
+        int count = type == EntityType.TROPICAL_FISH || type == EntityType.COD || type == EntityType.SALMON
+                ? 2 + random.nextInt(4) : 1;
+        for (int i = 0; i < count; i++) {
+            if (!spawnOceanEntity(world, chunk, random, type)) break;
+        }
+    }
+
+    private void spawnHostileOceanMob(World world, Chunk chunk, ThreadLocalRandom random) {
+        EntityType type = random.nextInt(100) < 78 ? EntityType.DROWNED : EntityType.GUARDIAN;
+        if (getCount(world, type) >= oceanCaps.getOrDefault(type, 0)) return;
+        spawnOceanEntity(world, chunk, random, type);
+    }
+
+    private boolean spawnOceanEntity(World world, Chunk chunk, ThreadLocalRandom random, EntityType type) {
+        if (getCount(world, type) >= oceanCaps.getOrDefault(type, 0)) return false;
+        for (int attempt = 0; attempt < 8; attempt++) {
             int x = chunk.getX() * 16 + 2 + random.nextInt(12);
             int z = chunk.getZ() * 16 + 2 + random.nextInt(12);
-            if (distance(x, z) < islandRadius + 18 || distance(x, z) > oceanRadius) continue;
-            int y = Math.max(5, seaLevel - 5 - random.nextInt(22));
-            if (!world.getBlockAt(x, y, z).getType().name().equals("WATER")) continue;
-            if (!world.getBlockAt(x, y + 1, z).getType().name().equals("WATER")) continue;
-            world.spawnEntity(new Location(world, x + .5D, y, z + .5D), type);
-            return;
+            if (!isInsideOcean(x, z)) continue;
+            int y = Math.max(world.getMinHeight() + 6, seaLevel - 5 - random.nextInt(30));
+            if (world.getBlockAt(x, y, z).getType() != Material.WATER) continue;
+            if (world.getBlockAt(x, y + 1, z).getType() != Material.WATER) continue;
+            world.spawnEntity(new Location(world, x + .5D, y + .2D, z + .5D), type);
+            return true;
         }
+        return false;
     }
 
     private EntityType weightedLandType(ThreadLocalRandom random) {
@@ -134,12 +153,12 @@ public final class MobDecorator implements Listener {
 
     private EntityType weightedOceanType(ThreadLocalRandom random) {
         int roll = random.nextInt(100);
-        if (roll < 38) return EntityType.TROPICAL_FISH;
-        if (roll < 53) return EntityType.COD;
-        if (roll < 65) return EntityType.SALMON;
-        if (roll < 76) return EntityType.PUFFERFISH;
-        if (roll < 89) return EntityType.SQUID;
-        if (roll < 95) return EntityType.GLOW_SQUID;
+        if (roll < 36) return EntityType.TROPICAL_FISH;
+        if (roll < 54) return EntityType.COD;
+        if (roll < 70) return EntityType.SALMON;
+        if (roll < 80) return EntityType.PUFFERFISH;
+        if (roll < 91) return EntityType.SQUID;
+        if (roll < 96) return EntityType.GLOW_SQUID;
         return EntityType.DOLPHIN;
     }
 
