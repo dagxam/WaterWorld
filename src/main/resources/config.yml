@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.7 — wider archipelago, compact mountains, rich living ocean
+# WaterWorld 3.8 — natural narrow beaches and smooth ocean entry
 # ==========================================================
 world:
   name: waterworld
@@ -23,17 +23,20 @@ ocean:
 caves:
   enabled: false
 
-# Main island remains about 300x300 blocks. The mountain is deliberately smaller,
-# lower and more compact so green land, beaches and the village stay visually dominant.
+# Main island remains about 300x300 blocks. The beach is deliberately very narrow,
+# while the underwater shelf extends farther and descends gradually into the ocean.
 island:
   enabled: true
   center-x: 0
   center-z: 0
   radius: 150
-  slope-radius: 24
+  slope-radius: 14
   height: 18
   variation: 2.0
   noise-scale: 0.022
+  shore:
+    beach-width: 2
+    underwater-transition: 14
   mountain:
     enabled: true
     offset-x: 0
@@ -45,7 +48,6 @@ island:
     snow-line: 118
 
 # Exactly two fixed green islands. They are lower and flatter than the main island.
-# Each island has its own terrain height so secondary islands cannot grow large hills.
 additional-islands:
   count: 2
   forest:
@@ -65,8 +67,7 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
-# IMPORTANT: ocean decoration scans down to the actual seabed, so plants and coral
-# are no longer skipped because getHighestBlockYAt() returns the water surface.
+# Ocean decoration scans down to the actual seabed.
 ocean-life:
   enabled: true
   attempts-per-chunk: 40
