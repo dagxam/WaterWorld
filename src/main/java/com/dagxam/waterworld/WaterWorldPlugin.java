@@ -95,7 +95,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        oceanDecorator = new OceanDecorator(this, sea, radius, oceanRadius);
+        // Отдельная система декорации океанского дна, независимая от декоратора острова.
+        if (getConfig().getBoolean("ocean-life.enabled", true)) {
+            oceanDecorator = new OceanDecorator(this, sea, cx, cz, radius, oceanRadius, getConfig());
+        }
 
         if (getConfig().getBoolean("animals.enabled", true)) {
             mobDecorator = new MobDecorator(this, sea, cx, cz, radius, oceanRadius);
@@ -272,7 +275,15 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!event.getWorld().getName().equals(worldName)) return;
-        if (oceanDecorator != null) oceanDecorator.decorateOnce(event.getChunk());
+        // Критическая правка: не декорируем прямо в ChunkLoad. На свежем чанке этот момент
+        // может наступить раньше ChunkPopulate, из-за чего пустое дно ошибочно получало метку.
+        // Запускаем на следующем тике: готовый чанк уже содержит океанское дно.
+        if (oceanDecorator != null) {
+            Chunk chunk = event.getChunk();
+            getServer().getScheduler().runTask(this, () -> {
+                if (chunk.isLoaded()) oceanDecorator.decorateOnce(chunk);
+            });
+        }
         if (treasureDecorator != null) treasureDecorator.decorate(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ());
     }
 
@@ -282,6 +293,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (!world.getName().equals(worldName)) return;
         Chunk chunk = event.getChunk();
         if (decorator != null) decorator.decorate(world, chunk.getX(), chunk.getZ());
+        // На новом чанке декорируем после базовой генерации океана, до следующего тика ChunkLoad.
         if (oceanDecorator != null) oceanDecorator.decorateOnce(chunk);
         if (treasureDecorator != null) treasureDecorator.decorate(world, chunk.getX(), chunk.getZ());
         if (mobDecorator != null) mobDecorator.populate(chunk);
