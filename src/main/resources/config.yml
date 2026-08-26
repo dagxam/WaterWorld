@@ -1,71 +1,98 @@
 # ==========================================================
-# WaterWorld — настройки основного мира
+# WaterWorld 3.8 — natural narrow beaches and smooth ocean entry
 # ==========================================================
-
-# WaterWorld больше НЕ создаёт второй отдельный мир.
-# Генератор применяется к основному миру сервера, имя которого задано
-# стандартным параметром level-name в server.properties.
-# Если level-name=waterworld, основной мир будет называться waterworld.
 world:
   name: waterworld
 
-sea-level: 63
+sea-level: 62
+
+spawn:
+  preload-chunk-radius: 4
 
 time-cycle:
   enabled: true
   day-duration-seconds: 600
   night-duration-seconds: 600
-  update-interval-ticks: 1
+  update-interval-ticks: 20
 
 ocean:
-  base-height: 35
-  height-amplitude: 12
-  terrain-scale: 0.005
-  cave-scale: 0.015
-  cave-threshold: 0.64
-  cave-roof: 8
+  base-height: 34
+  height-amplitude: 5
+  terrain-scale: 0.004
 
+caves:
+  enabled: false
+
+# Main island remains about 300x300 blocks. The beach is deliberately very narrow,
+# while the underwater shelf extends farther and descends gradually into the ocean.
 island:
   enabled: true
   center-x: 0
   center-z: 0
-  radius: 100
-  slope-radius: 132
-  height: 10
-  variation: 2.2
-  noise-scale: 0.045
-  biome: PLAINS
-
+  radius: 150
+  slope-radius: 14
+  height: 18
+  variation: 2.0
+  noise-scale: 0.022
+  shore:
+    beach-width: 2
+    underwater-transition: 14
   mountain:
     enabled: true
     offset-x: 0
-    offset-z: -22
-    radius: 38
-    peak-height: 92
-    snow-line: 120
-    secondary-peaks: false
-    cave:
-      enabled: true
+    offset-z: -18
+    radius: 42
+    stretch-x: 1.28
+    stretch-z: 0.78
+    peak-height: 140
+    snow-line: 118
 
+# Exactly two fixed green islands. They are lower and flatter than the main island.
 additional-islands:
-  count: 1
-  radius: 64
-  min-distance: 180
-  max-distance: 420
+  count: 2
+  forest:
+    x: 0
+    z: -300
+    radius: 35
+    height: 9
+  tropical:
+    x: 240
+    z: 280
+    radius: 30
+    height: 8
 
 vegetation:
   enabled: true
-  attempts-per-chunk: 16
-  tree-chance-percent: 22
-  flower-chance-percent: 38
+  attempts-per-chunk: 10
+  tree-chance-percent: 18
+  flower-chance-percent: 32
+
+# Ocean decoration scans down to the actual seabed.
+ocean-life:
+  enabled: true
+  attempts-per-chunk: 40
+  seagrass-chance-percent: 62
+  kelp-chance-percent: 28
+  coral-chance-percent: 24
+  meadow-chance-percent: 24
+  magma-vent-chance-percent: 2
+
+# Rare handcrafted-style points of interest on the ocean floor.
+ocean-structures:
+  chance-percent: 4
+  shipwreck-percent: 50
+  ruin-percent: 50
 
 village:
   enabled: true
-  offset-x: 0
-  offset-z: 55
+  min-island-radius: 24
+  additional-island-chance: 1.0
+
+treasures:
+  enabled: true
+  min-per-island: 1
+  max-per-island: 3
 
 animals:
   enabled: true
-  ocean-radius: 600
-
-# Руды WaterWorld не генерирует. Единственная система генерации руд — BedrockOres/Ore-Plugin.
+  ocean-radius: 900
