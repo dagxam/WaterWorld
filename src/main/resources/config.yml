@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.5 — fixed archipelago and rich living ocean
+# WaterWorld 3.6 — wider archipelago, smaller main mountain, rich living ocean
 # ==========================================================
 world:
   name: waterworld
@@ -23,6 +23,8 @@ ocean:
 caves:
   enabled: false
 
+# Main island remains about 300x300 blocks. The mountain is deliberately smaller,
+# lower and more compact so green land, beaches and the village stay visually dominant.
 island:
   enabled: true
   center-x: 0
@@ -35,22 +37,24 @@ island:
   mountain:
     enabled: true
     offset-x: 0
-    offset-z: -24
-    radius: 58
-    stretch-x: 1.35
-    stretch-z: 0.72
-    peak-height: 158
-    snow-line: 128
+    offset-z: -18
+    radius: 42
+    stretch-x: 1.28
+    stretch-z: 0.78
+    peak-height: 140
+    snow-line: 118
 
+# Exactly two fixed green islands. They are moved farther away from the main island
+# so there is a broad ocean gap and the archipelago feels more open.
 additional-islands:
   count: 2
   forest:
     x: 0
-    z: -220
+    z: -300
     radius: 35
   tropical:
-    x: 170
-    z: 190
+    x: 240
+    z: 280
     radius: 30
 
 vegetation:
