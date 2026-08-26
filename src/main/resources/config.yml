@@ -1,10 +1,9 @@
 # ==========================================================
-# WaterWorld 3.3 — fixed archipelago, villages, treasures, living ocean
+# WaterWorld 3.4 — fixed archipelago, villages, treasures, living ocean
 # ==========================================================
 world:
   name: waterworld
 
-# Reference map waterline
 sea-level: 62
 
 spawn:
@@ -16,13 +15,13 @@ time-cycle:
   night-duration-seconds: 600
   update-interval-ticks: 20
 
-# Calm sandy ocean. The floor is deliberately kept below the surface so it does not form stone shelves.
+# Calm sandy ocean. The floor stays well below the surface and is decorated separately.
 ocean:
   base-height: 34
   height-amplitude: 5
   terrain-scale: 0.004
 
-# Disabled by default: previous cave carving was producing ugly holes and dark voids under the ocean.
+# Caves remain disabled so they do not create ugly holes or dark voids under the ocean.
 caves:
   enabled: false
 
@@ -64,15 +63,16 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
-# Beautiful living ocean floor.
+# Dense, colorful and varied living ocean floor.
 ocean-life:
   enabled: true
-  attempts-per-chunk: 14
-  seagrass-chance-percent: 42
-  kelp-chance-percent: 22
-  coral-chance-percent: 12
+  attempts-per-chunk: 32
+  seagrass-chance-percent: 58
+  kelp-chance-percent: 24
+  coral-chance-percent: 18
+  meadow-chance-percent: 18
+  magma-vent-chance-percent: 2
 
-# Every island can have a village. The smaller islands are intentionally included.
 village:
   enabled: true
   min-island-radius: 24
