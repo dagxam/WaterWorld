@@ -29,7 +29,7 @@ import java.util.Properties;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "7";
+    private static final String LAYOUT_VERSION = "8";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
@@ -37,6 +37,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private NaturalIslandDecorator decorator;
     private OceanDecorator oceanDecorator;
     private MobDecorator mobDecorator;
+    private TreasureDecorator treasureDecorator;
     private VillageDecorator village;
     private String worldName = "world";
     private boolean restartRequired;
@@ -54,9 +55,9 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld v7 обнаружил мир со старой генерацией.");
-            getLogger().warning("Старые чанки и каменные территории сохранены в резервную копию и не будут загружены.");
-            getLogger().warning("Сервер остановится сейчас. Запустите его ещё раз: будет создан чистый мир только с океаном и заданными островами.");
+            getLogger().warning("WaterWorld v8 обнаружил мир со старой генерацией.");
+            getLogger().warning("Старые чанки сохранены в резервную копию.");
+            getLogger().warning("Сервер остановится сейчас. Запустите его ещё раз для чистой генерации.");
             Bukkit.shutdown();
             return;
         }
@@ -83,9 +84,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         int cz = getConfig().getInt("island.center-z", 0);
         int radius = Math.max(16, getConfig().getInt("island.radius", 100));
         int oceanRadius = Math.max(radius + 64, getConfig().getInt("animals.ocean-radius", 600));
+        IslandLayout layout = new IslandLayout(getConfig());
 
         if (getConfig().getBoolean("island.enabled", true)) {
-            decorator = new NaturalIslandDecorator(sea, new IslandLayout(getConfig()));
+            decorator = new NaturalIslandDecorator(sea, layout);
+            treasureDecorator = new TreasureDecorator(this, sea, layout);
             if (getConfig().getBoolean("village.enabled", true)) {
                 village = new VillageDecorator(cx, cz, radius,
                         getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
@@ -113,7 +116,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
         worldName = world.getName();
         if (!(world.getGenerator() instanceof WaterGenerator)) {
-            getLogger().severe("Основной мир загружен не с WaterGenerator. Сервер остановлен, чтобы не создавать ванильные каменные чанки.");
+            getLogger().severe("Основной мир загружен не с WaterGenerator. Сервер остановлен.");
             Bukkit.shutdown();
             return;
         }
@@ -122,8 +125,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         setIslandSpawn(world);
         if (mobDecorator != null) mobDecorator.initializeWorld(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld v7 успешно запущен. Основной мир: " + world.getName()
-                + ", генератор: " + world.getGenerator().getClass().getName());
+        getLogger().info("WaterWorld v8 успешно запущен. Основной мир: " + world.getName());
     }
 
     private String readLevelName() {
@@ -151,13 +153,13 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
         if (needsLayoutReset) {
             if (!backupExistingWorld()) {
-                getLogger().severe("WaterWorld не может безопасно пересоздать старый мир. Старый мир оставлен без изменений.");
+                getLogger().severe("WaterWorld не может безопасно пересоздать старый мир.");
                 return false;
             }
             section.set("generator", GENERATOR_NAME);
             try {
                 yml.save(file);
-                getLogger().warning("Обнаружена старая или смешанная схема мира. Активный мир будет создан полностью заново.");
+                getLogger().warning("Старая схема мира архивирована; будет создан новый мир.");
                 return true;
             } catch (IOException e) {
                 getLogger().severe("Не удалось записать bukkit.yml: " + e.getMessage());
@@ -167,13 +169,12 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
         if (alreadyConfigured) return false;
         if (hasExistingWorld && !backupExistingWorld()) {
-            getLogger().severe("Не удалось сохранить существующий мир. Генератор не будет переключён автоматически.");
+            getLogger().severe("Не удалось сохранить существующий мир.");
             return false;
         }
         section.set("generator", GENERATOR_NAME);
         try {
             yml.save(file);
-            getLogger().info("Автоматически настроен bukkit.yml: worlds." + worldName + ".generator = " + GENERATOR_NAME);
             return hasExistingWorld;
         } catch (IOException e) {
             getLogger().severe("Не удалось записать bukkit.yml: " + e.getMessage());
@@ -199,9 +200,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Path marker = new File(new File(serverRoot(), worldName), LAYOUT_MARKER).toPath();
         try {
             Files.writeString(marker, LAYOUT_VERSION + System.lineSeparator(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            getLogger().warning("Не удалось записать маркер версии генерации: " + e.getMessage());
-        }
+        } catch (IOException e) { getLogger().warning("Не удалось записать маркер версии генерации: " + e.getMessage()); }
     }
 
     private boolean backupExistingWorld() {
@@ -215,7 +214,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             getLogger().warning("Старый мир сохранён в: " + backup.getFileName());
             return true;
         } catch (IOException e) {
-            getLogger().warning("Не удалось сохранить старый мир в резервную копию: " + e.getMessage());
+            getLogger().warning("Не удалось сохранить старый мир: " + e.getMessage());
             return false;
         }
     }
@@ -245,12 +244,10 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
                 if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
                         && world.getBlockAt(x, y + 1, z).isEmpty() && world.getBlockAt(x, y + 2, z).isEmpty()) {
                     world.setSpawnLocation(x, y + 1, z);
-                    getLogger().info("Точка появления установлена на острове: " + x + ", " + (y + 1) + ", " + z);
                     return;
                 }
             }
         }
-        getLogger().warning("Безопасная точка появления на острове не найдена.");
     }
 
     private void startCustomTimeCycle(World world) {
@@ -276,6 +273,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!event.getWorld().getName().equals(worldName)) return;
         if (oceanDecorator != null) oceanDecorator.decorateOnce(event.getChunk());
+        if (treasureDecorator != null) treasureDecorator.decorate(event.getWorld(), event.getChunk().getX(), event.getChunk().getZ());
     }
 
     @EventHandler
@@ -285,6 +283,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Chunk chunk = event.getChunk();
         if (decorator != null) decorator.decorate(world, chunk.getX(), chunk.getZ());
         if (oceanDecorator != null) oceanDecorator.decorateOnce(chunk);
+        if (treasureDecorator != null) treasureDecorator.decorate(world, chunk.getX(), chunk.getZ());
         if (mobDecorator != null) mobDecorator.populate(chunk);
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
     }
