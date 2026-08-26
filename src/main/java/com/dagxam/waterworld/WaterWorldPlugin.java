@@ -9,6 +9,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkPopulateEvent;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -25,12 +26,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Properties;
 
-/**
- * WaterWorld replaces the primary server world with a clean ocean layout.
- * Version 7 is a hard generation reset: every world marked by an older
- * WaterWorld layout is archived before startup so legacy vanilla/stone chunks
- * cannot remain mixed with the new island-only generator.
- */
+/** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
     private static final String LAYOUT_VERSION = "7";
@@ -39,6 +35,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private WaterGenerator generator;
     private NaturalIslandDecorator decorator;
+    private OceanDecorator oceanDecorator;
+    private MobDecorator mobDecorator;
     private VillageDecorator village;
     private String worldName = "world";
     private boolean restartRequired;
@@ -80,17 +78,26 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     }
 
     private void configureDecorators() {
-        if (!getConfig().getBoolean("island.enabled", true)) return;
         int sea = getConfig().getInt("sea-level", 63);
-        decorator = new NaturalIslandDecorator(sea, new IslandLayout(getConfig()));
-
         int cx = getConfig().getInt("island.center-x", 0);
         int cz = getConfig().getInt("island.center-z", 0);
-        int radius = getConfig().getInt("island.radius", 100);
-        if (getConfig().getBoolean("village.enabled", true)) {
-            village = new VillageDecorator(cx, cz, radius,
-                    getConfig().getInt("village.offset-x", 0),
-                    getConfig().getInt("village.offset-z", 55));
+        int radius = Math.max(16, getConfig().getInt("island.radius", 100));
+        int oceanRadius = Math.max(radius + 64, getConfig().getInt("animals.ocean-radius", 600));
+
+        if (getConfig().getBoolean("island.enabled", true)) {
+            decorator = new NaturalIslandDecorator(sea, new IslandLayout(getConfig()));
+            if (getConfig().getBoolean("village.enabled", true)) {
+                village = new VillageDecorator(cx, cz, radius,
+                        getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+            }
+        }
+
+        oceanDecorator = new OceanDecorator(this, sea, radius, oceanRadius);
+
+        if (getConfig().getBoolean("animals.enabled", true)) {
+            mobDecorator = new MobDecorator(this, sea, cx, cz, radius, oceanRadius);
+            getServer().getPluginManager().registerEvents(mobDecorator, this);
+            mobDecorator.start();
         }
     }
 
@@ -113,6 +120,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         writeLayoutMarker();
         generateSpawnIslandChunks(world);
         setIslandSpawn(world);
+        if (mobDecorator != null) mobDecorator.initializeWorld(world);
         startCustomTimeCycle(world);
         getLogger().info("WaterWorld v7 успешно запущен. Основной мир: " + world.getName()
                 + ", генератор: " + world.getGenerator().getClass().getName());
@@ -141,8 +149,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         boolean hasExistingWorld = hasExistingWorld();
         boolean needsLayoutReset = hasExistingWorld && !layoutVersionMatches();
 
-        // Chunk data is permanent. Any layout marker older than v7 is treated as contaminated:
-        // archive the whole world before the server can load even one old region file.
         if (needsLayoutReset) {
             if (!backupExistingWorld()) {
                 getLogger().severe("WaterWorld не может безопасно пересоздать старый мир. Старый мир оставлен без изменений.");
@@ -267,11 +273,19 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onChunkLoad(ChunkLoadEvent event) {
+        if (!event.getWorld().getName().equals(worldName)) return;
+        if (oceanDecorator != null) oceanDecorator.decorateOnce(event.getChunk());
+    }
+
+    @EventHandler
     public void onChunkPopulate(ChunkPopulateEvent event) {
         World world = event.getWorld();
         if (!world.getName().equals(worldName)) return;
         Chunk chunk = event.getChunk();
         if (decorator != null) decorator.decorate(world, chunk.getX(), chunk.getZ());
+        if (oceanDecorator != null) oceanDecorator.decorateOnce(chunk);
+        if (mobDecorator != null) mobDecorator.populate(chunk);
         if (village != null && isVillageTriggerChunk(chunk.getX(), chunk.getZ())) village.generate(world);
     }
 
