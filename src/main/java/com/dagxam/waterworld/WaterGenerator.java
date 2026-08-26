@@ -16,7 +16,7 @@ public final class WaterGenerator extends ChunkGenerator {
     private final int seaLevel, oceanBaseHeight, oceanAmplitude;
     private final double terrainScale, islandNoiseScale;
     private final boolean islandEnabled, caveEnabled, mountainEnabled;
-    private final int islandHeight, slopeRadius, mountainPeakHeight, snowLine;
+    private final int islandHeight, forestIslandHeight, tropicalIslandHeight, slopeRadius, mountainPeakHeight, snowLine;
     private final double islandVariation, mountainRadius, mountainStretchX, mountainStretchZ;
     private final int mountainX, mountainZ;
     private final IslandLayout layout;
@@ -32,6 +32,8 @@ public final class WaterGenerator extends ChunkGenerator {
         caveEnabled = config.getBoolean("caves.enabled", false);
         islandEnabled = config.getBoolean("island.enabled", true);
         islandHeight = Math.max(3, config.getInt("island.height", 18));
+        forestIslandHeight = Math.max(3, config.getInt("additional-islands.forest.height", 9));
+        tropicalIslandHeight = Math.max(3, config.getInt("additional-islands.tropical.height", 8));
         slopeRadius = Math.max(12, config.getInt("island.slope-radius", 24));
         islandVariation = config.getDouble("island.variation", 2.0D);
         islandNoiseScale = config.getDouble("island.noise-scale", 0.022D);
@@ -39,12 +41,12 @@ public final class WaterGenerator extends ChunkGenerator {
         int cz = config.getInt("island.center-z", 0);
         mountainEnabled = config.getBoolean("island.mountain.enabled", true);
         mountainX = cx + config.getInt("island.mountain.offset-x", 0);
-        mountainZ = cz + config.getInt("island.mountain.offset-z", -24);
-        mountainPeakHeight = Math.max(seaLevel + islandHeight + 10, config.getInt("island.mountain.peak-height", 158));
-        snowLine = Math.max(seaLevel + 25, config.getInt("island.mountain.snow-line", 128));
-        mountainRadius = Math.max(18.0D, config.getDouble("island.mountain.radius", 58.0D));
-        mountainStretchX = Math.max(0.6D, config.getDouble("island.mountain.stretch-x", 1.35D));
-        mountainStretchZ = Math.max(0.6D, config.getDouble("island.mountain.stretch-z", 0.72D));
+        mountainZ = cz + config.getInt("island.mountain.offset-z", -18);
+        mountainPeakHeight = Math.max(seaLevel + islandHeight + 10, config.getInt("island.mountain.peak-height", 140));
+        snowLine = Math.max(seaLevel + 25, config.getInt("island.mountain.snow-line", 118));
+        mountainRadius = Math.max(18.0D, config.getDouble("island.mountain.radius", 42.0D));
+        mountainStretchX = Math.max(0.6D, config.getDouble("island.mountain.stretch-x", 1.28D));
+        mountainStretchZ = Math.max(0.6D, config.getDouble("island.mountain.stretch-z", 0.78D));
         layout = new IslandLayout(config);
     }
 
@@ -92,7 +94,6 @@ public final class WaterGenerator extends ChunkGenerator {
                     } else {
                         block = oceanMaterial(y, oceanFloor);
                     }
-                    // Caves are deliberately limited to solid land only. They can never hollow out the ocean floor.
                     if (caveEnabled && islandColumn && y > minY + 8 && y < surface - 8 && isLandCave(x, y, z, island)) {
                         block = Material.AIR;
                     }
@@ -138,12 +139,23 @@ public final class WaterGenerator extends ChunkGenerator {
             return (int) Math.round((seaLevel + 2.0D) * (1.0D - t) + oceanFloor * t);
         }
 
+        int localHeight = islandHeightFor(island);
+        double variationMultiplier = island.main() ? 1.0D : 0.45D;
         double edge = 1.0D - distance / island.radius();
         double broad = edge * edge * (3.0D - 2.0D * edge);
-        double edgeNoise = islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation * (0.25D + broad);
-        double base = seaLevel + 2.0D + broad * islandHeight + edgeNoise;
+        double edgeNoise = islandGen.noise(x, z, 0.5D, 0.5D, true) * islandVariation * variationMultiplier * (0.25D + broad);
+        double base = seaLevel + 2.0D + broad * localHeight + edgeNoise;
         if (island.main() && mountainEnabled) base += mountainContribution(x, z);
-        return clamp((int) Math.round(base), seaLevel + 1, island.main() ? mountainPeakHeight : seaLevel + islandHeight + 4);
+        int maxSurface = island.main() ? mountainPeakHeight : seaLevel + localHeight + 2;
+        return clamp((int) Math.round(base), seaLevel + 1, maxSurface);
+    }
+
+    private int islandHeightFor(IslandLayout.Island island) {
+        return switch (island.type()) {
+            case MAIN -> islandHeight;
+            case FOREST -> forestIslandHeight;
+            case TROPICAL -> tropicalIslandHeight;
+        };
     }
 
     private double mountainContribution(int x, int z) {
