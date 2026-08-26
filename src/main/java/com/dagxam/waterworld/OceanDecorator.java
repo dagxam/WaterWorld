@@ -10,10 +10,7 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.Random;
 
-/**
- * Deterministic living ocean generator. Uses the real seabed instead of
- * getHighestBlockYAt(), which returns the water surface in this world.
- */
+/** Deterministic living ocean generator using a real seabed scan, not water-surface height. */
 public final class OceanDecorator {
     private final IslandLayout layout;
     private final int seaLevel, attempts, plantChance, kelpChance, coralChance, meadowChance, ventChance;
@@ -36,22 +33,17 @@ public final class OceanDecorator {
     public void decorate(World world, int chunkX, int chunkZ) {
         if (attempts == 0 || !isOceanChunk(world, chunkX, chunkZ)) return;
         Random random = random(world, chunkX, chunkZ, 0x51A7E5EEDL);
-
         for (int i = 0; i < attempts; i++) {
-            int x = chunkX * 16 + random.nextInt(16);
-            int z = chunkZ * 16 + random.nextInt(16);
+            int x = chunkX * 16 + random.nextInt(16), z = chunkZ * 16 + random.nextInt(16);
             if (insideIsland(world, x, z)) continue;
             int floorY = findSeabed(world, x, z);
             if (floorY < world.getMinHeight() + 2 || floorY >= seaLevel - 1) continue;
             decorateFloor(world, x, floorY, z, random);
             decorateLife(world, x, floorY, z, random);
         }
-
-        Random structures = random(world, chunkX, chunkZ, 0x0CE4N5EEDL);
+        Random structures = random(world, chunkX, chunkZ, 0x0CE45EEDL);
         if (structures.nextInt(100) < structureChance) {
-            int x = chunkX * 16 + 3 + structures.nextInt(10);
-            int z = chunkZ * 16 + 3 + structures.nextInt(10);
-            int floor = findSeabed(world, x, z);
+            int x = chunkX * 16 + 3 + structures.nextInt(10), z = chunkZ * 16 + 3 + structures.nextInt(10), floor = findSeabed(world, x, z);
             if (floor > world.getMinHeight() + 8 && floor < seaLevel - 8) {
                 int roll = structures.nextInt(100);
                 if (roll < shipwreckChance) shipwreck(world, x, floor, z, structures);
@@ -75,8 +67,7 @@ public final class OceanDecorator {
     }
 
     private boolean isOceanChunk(World world, int chunkX, int chunkZ) {
-        int x = chunkX * 16 + 8, z = chunkZ * 16 + 8;
-        long dx = x, dz = z, radius = 900L;
+        int x = chunkX * 16 + 8, z = chunkZ * 16 + 8; long dx = x, dz = z, radius = 900L;
         return dx * dx + dz * dz <= radius * radius && !insideIsland(world, x, z);
     }
 
@@ -137,37 +128,32 @@ public final class OceanDecorator {
             if (dx * dx + dz * dz > radius * radius || random.nextInt(100) >= 76) continue;
             int px = x + dx, pz = z + dz, floor = findSeabed(world, px, pz);
             if (floor < seaLevel - 26 || floor >= seaLevel - 1 || world.getBlockAt(px, floor + 1, pz).getType() != Material.WATER) continue;
-            Material coral = corals[random.nextInt(corals.length)];
-            world.getBlockAt(px, floor, pz).setType(coral, false);
+            world.getBlockAt(px, floor, pz).setType(corals[random.nextInt(corals.length)], false);
             if (random.nextInt(100) < 48 && world.getBlockAt(px, floor + 1, pz).getType() == Material.WATER) world.getBlockAt(px, floor + 1, pz).setType(Material.SEA_PICKLE, false);
             if (random.nextInt(100) < 28 && world.getBlockAt(px, floor + 1, pz).getType() == Material.WATER) seagrass(world, px, floor + 1, pz, random);
         }
     }
 
     private void shipwreck(World world, int x, int floor, int z, Random random) {
-        int length = 7 + random.nextInt(4), y = floor + 1;
-        boolean alongX = random.nextBoolean();
+        int length = 7 + random.nextInt(4), y = floor + 1; boolean alongX = random.nextBoolean();
         for (int i = -length / 2; i <= length / 2; i++) for (int w = -2; w <= 2; w++) {
             int px = alongX ? x + i : x + w, pz = alongX ? z + w : z + i;
             if (Math.abs(w) == 2 || (Math.abs(i) == length / 2 && Math.abs(w) > 0)) world.getBlockAt(px, y, pz).setType(Material.DARK_OAK_PLANKS, false);
-            else if (random.nextInt(100) < 24) world.getBlockAt(px, y, pz).setType(Material.AIR, false);
+            else if (random.nextInt(100) < 24) world.getBlockAt(px, y, pz).setType(Material.WATER, false);
         }
         for (int i = -length / 2 + 1; i < length / 2; i++) {
             int px = alongX ? x + i : x, pz = alongX ? z : z + i;
             if (random.nextInt(100) < 65) world.getBlockAt(px, y + 1, pz).setType(Material.OAK_FENCE, false);
         }
-        int cx = x, cz = z;
-        world.getBlockAt(cx, y, cz).setType(Material.BARREL, false);
-        if (world.getBlockAt(cx, y, cz).getState() instanceof Barrel barrel) fillLoot(barrel.getInventory(), random, true);
+        world.getBlockAt(x, y, z).setType(Material.BARREL, false);
+        if (world.getBlockAt(x, y, z).getState() instanceof Barrel barrel) fillLoot(barrel.getInventory(), random, true);
     }
 
     private void underwaterRuin(World world, int x, int floor, int z, Random random) {
-        int y = floor + 1, radius = 4 + random.nextInt(3);
-        Material wall = random.nextBoolean() ? Material.PRISMARINE_BRICKS : Material.MOSSY_STONE_BRICKS;
+        int y = floor + 1, radius = 4 + random.nextInt(3); Material wall = random.nextBoolean() ? Material.PRISMARINE_BRICKS : Material.MOSSY_STONE_BRICKS;
         for (int dx = -radius; dx <= radius; dx++) for (int dz = -radius; dz <= radius; dz++) {
             int d = dx * dx + dz * dz;
-            if (d > radius * radius || d < (radius - 2) * (radius - 2)) continue;
-            if (random.nextInt(100) < 18) continue;
+            if (d > radius * radius || d < (radius - 2) * (radius - 2) || random.nextInt(100) < 18) continue;
             int h = 1 + random.nextInt(4);
             for (int py = 0; py < h; py++) world.getBlockAt(x + dx, y + py, z + dz).setType(wall, false);
         }
@@ -184,9 +170,6 @@ public final class OceanDecorator {
         if (!ship && random.nextInt(100) < 25) inventory.addItem(new ItemStack(Material.NAUTILUS_SHELL, 1 + random.nextInt(3)));
     }
 
-    private Random random(World world, int chunkX, int chunkZ, long salt) {
-        return new Random(world.getSeed() ^ salt ^ ((long) chunkX * 341873128712L) ^ ((long) chunkZ * 132897987541L));
-    }
-
+    private Random random(World world, int chunkX, int chunkZ, long salt) { return new Random(world.getSeed() ^ salt ^ ((long) chunkX * 341873128712L) ^ ((long) chunkZ * 132897987541L)); }
     private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
 }
