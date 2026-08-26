@@ -17,6 +17,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -27,6 +28,8 @@ import java.util.Properties;
 /** WaterWorld replaces the main server world and never creates a second world. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
+    private static final String LAYOUT_VERSION = "4";
+    private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private WaterGenerator generator;
@@ -50,14 +53,14 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld настроил основной мир '" + worldName + "' и сохранил старый мир в резервную копию.");
-            getLogger().warning("Сервер сейчас остановится. Просто запустите его ещё раз — level-name менять не нужно.");
+            getLogger().warning("WaterWorld обновил генерацию архипелага и сохранил предыдущий мир в резервную копию.");
+            getLogger().warning("Сервер сейчас остановится. Запустите его ещё раз — будет создан чистый мир с одним главным островом и малыми зелёными островами.");
             Bukkit.shutdown();
             return;
         }
         configureDecorators();
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("WaterWorld ожидает создание основного мира '" + worldName + "'. Спавн животных передан AnimalFarm/ванильному серверу.");
+        getLogger().info("WaterWorld ожидает создание основного мира '" + worldName + "'.");
     }
 
     @Override
@@ -78,8 +81,11 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         int cz = getConfig().getInt("island.center-z", 0);
         int radius = getConfig().getInt("island.radius", 100);
         if (!getConfig().getBoolean("island.enabled", true)) return;
+
         decorator = new NaturalIslandDecorator(sea, cx, cz, radius);
-        if (getConfig().getBoolean("island.mountain.enabled", true)) {
+
+        // Старый отдельный генератор каменной горы выключен по умолчанию.
+        if (getConfig().getBoolean("island.mountain.enabled", false)) {
             int mx = cx + getConfig().getInt("island.mountain.offset-x", 0);
             int mz = cz + getConfig().getInt("island.mountain.offset-z", -22);
             int mr = getConfig().getInt("island.mountain.radius", 38);
@@ -87,10 +93,13 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             mountain = new MountainDecorator(sea, mx, mz, mr, peak,
                     getConfig().getInt("island.mountain.snow-line", 120),
                     getConfig().getBoolean("island.mountain.secondary-peaks", false));
-            if (getConfig().getBoolean("island.mountain.cave.enabled", true)) cave = new CaveDecorator(mx, mz, mr, sea, peak);
+            if (getConfig().getBoolean("island.mountain.cave.enabled", false)) cave = new CaveDecorator(mx, mz, mr, sea, peak);
         }
-        if (getConfig().getBoolean("village.enabled", true)) village = new VillageDecorator(cx, cz, radius,
-                getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+
+        if (getConfig().getBoolean("village.enabled", true)) {
+            village = new VillageDecorator(cx, cz, radius,
+                    getConfig().getInt("village.offset-x", 0), getConfig().getInt("village.offset-z", 55));
+        }
     }
 
     @EventHandler
@@ -109,6 +118,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             Bukkit.shutdown();
             return;
         }
+        writeLayoutMarker();
         generateSpawnIslandChunks(world);
         setIslandSpawn(world);
         startCustomTimeCycle(world);
@@ -134,8 +144,28 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (worlds == null) worlds = yml.createSection("worlds");
         ConfigurationSection section = worlds.getConfigurationSection(worldName);
         if (section == null) section = worlds.createSection(worldName);
-        if (GENERATOR_NAME.equalsIgnoreCase(section.getString("generator"))) return false;
-        backupExistingWorld();
+
+        boolean alreadyConfigured = GENERATOR_NAME.equalsIgnoreCase(section.getString("generator"));
+        boolean hasExistingWorld = hasExistingWorld();
+        boolean needsLayoutReset = hasExistingWorld && !layoutVersionMatches();
+
+        // Старые чанки не меняются после обновления генератора. Поэтому один раз
+        // архивируем прежний мир и создаём новый, иначе на карте остаются каменные материки.
+        if (needsLayoutReset) {
+            backupExistingWorld();
+            section.set("generator", GENERATOR_NAME);
+            try {
+                yml.save(file);
+                getLogger().warning("Обнаружен мир старой схемы WaterWorld. Он будет пересоздан для новой схемы островов.");
+                return true;
+            } catch (IOException e) {
+                getLogger().severe("Не удалось записать bukkit.yml: " + e.getMessage());
+                return false;
+            }
+        }
+
+        if (alreadyConfigured) return false;
+        if (hasExistingWorld) backupExistingWorld();
         section.set("generator", GENERATOR_NAME);
         try {
             yml.save(file);
@@ -147,6 +177,29 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    private boolean hasExistingWorld() {
+        Path world = new File(serverRoot(), worldName).toPath();
+        return Files.isDirectory(world) && (Files.exists(world.resolve("level.dat")) || Files.isDirectory(world.resolve("region")));
+    }
+
+    private boolean layoutVersionMatches() {
+        Path marker = new File(new File(serverRoot(), worldName), LAYOUT_MARKER).toPath();
+        try {
+            return Files.isRegularFile(marker) && LAYOUT_VERSION.equals(Files.readString(marker, StandardCharsets.UTF_8).trim());
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private void writeLayoutMarker() {
+        Path marker = new File(new File(serverRoot(), worldName), LAYOUT_MARKER).toPath();
+        try {
+            Files.writeString(marker, LAYOUT_VERSION + System.lineSeparator(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            getLogger().warning("Не удалось записать маркер версии генерации: " + e.getMessage());
+        }
+    }
+
     private void backupExistingWorld() {
         Path world = new File(serverRoot(), worldName).toPath();
         if (!Files.isDirectory(world)) return;
@@ -155,7 +208,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         try {
             try { Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE); }
             catch (IOException ignored) { Files.move(world, backup); }
-            getLogger().warning("Старый ванильный мир сохранён в: " + backup.getFileName());
+            getLogger().warning("Старый мир сохранён в: " + backup.getFileName());
         } catch (IOException e) {
             getLogger().warning("Не удалось сохранить старый мир в резервную копию: " + e.getMessage());
         }
