@@ -52,6 +52,11 @@ public final class WaterGenerator extends ChunkGenerator {
         int minHeight = info.getMinHeight();
         int maxHeight = info.getMaxHeight() - 1;
 
+        // Критически важно: очищаем весь буфер чанка перед собственной генерацией.
+        // Иначе остатки предварительной/ванильной генерации выше seaLevel могут
+        // сохраниться в чанках возле дополнительных островов как огромные каменные земли.
+        data.setRegion(0, minHeight, 0, 16, maxHeight + 1, 16, Material.AIR);
+
         for (int lx = 0; lx < 16; lx++) {
             for (int lz = 0; lz < 16; lz++) {
                 int x = chunkX * 16 + lx;
@@ -60,7 +65,6 @@ public final class WaterGenerator extends ChunkGenerator {
                 int floor = getOceanFloor(info, x, z);
                 int surface = island == null ? floor : getIslandSurface(x, z, island);
 
-                // Вне точной области островов генерируется только океанское дно.
                 boolean islandColumn = island != null;
                 int top = Math.min(maxHeight, islandColumn ? Math.max(surface, seaLevel) : seaLevel);
                 for (int y = minHeight + 1; y <= top; y++) {
@@ -102,7 +106,6 @@ public final class WaterGenerator extends ChunkGenerator {
         }
         if (y <= 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
         if (surface <= seaLevel) {
-            // Песок только в узкой прибрежной полосе, затем сразу естественный грунт/камень под водой.
             data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
             return;
         }
@@ -122,7 +125,6 @@ public final class WaterGenerator extends ChunkGenerator {
             double noise = islandGen.noise(x, z, 0.5D, 0.5D, true) * island.variation();
             double base = seaLevel + 1.0D + coast * island.height() + noise;
 
-            // Центральный рельеф — только широкий мягкий холм, без пиков и каменных стен.
             if (island.main() && centralHillHeight > 0) {
                 double hx = island.x() + centralHillOffsetX;
                 double hz = island.z() + centralHillOffsetZ;
@@ -137,7 +139,6 @@ public final class WaterGenerator extends ChunkGenerator {
             return clamp((int) Math.round(base), seaLevel + 1, seaLevel + island.height() + centralHillHeight + 1);
         }
 
-        // Длинная плавная отмель: берег не обрывается стеной в океан.
         double t = (distance - radius) / (double) (slopeRadius - radius);
         t = t * t * (3.0D - 2.0D * t);
         return (int) Math.round((seaLevel + 0.5D) + (ocean - (seaLevel + 0.5D)) * t);
@@ -174,6 +175,6 @@ public final class WaterGenerator extends ChunkGenerator {
     @Override public boolean shouldGenerateNoise() { return true; }
     @Override public boolean shouldGenerateSurface() { return false; }
     @Override public boolean shouldGenerateCaves() { return false; }
-    @Override public boolean shouldGenerateDecorations() { return true; }
+    @Override public boolean shouldGenerateDecorations() { return false; }
     @Override public boolean shouldGenerateMobs() { return true; }
 }
