@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.4 — fixed archipelago, villages, treasures, living ocean
+# WaterWorld 3.5 — fixed archipelago and rich living ocean
 # ==========================================================
 world:
   name: waterworld
@@ -15,17 +15,14 @@ time-cycle:
   night-duration-seconds: 600
   update-interval-ticks: 20
 
-# Calm sandy ocean. The floor stays well below the surface and is decorated separately.
 ocean:
   base-height: 34
   height-amplitude: 5
   terrain-scale: 0.004
 
-# Caves remain disabled so they do not create ugly holes or dark voids under the ocean.
 caves:
   enabled: false
 
-# Main island: about 300x300 blocks, with one compact elongated mountain massif.
 island:
   enabled: true
   center-x: 0
@@ -45,7 +42,6 @@ island:
     peak-height: 158
     snow-line: 128
 
-# Exactly two fixed green islands. No random islands and no rocky-island type.
 additional-islands:
   count: 2
   forest:
@@ -63,15 +59,22 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
-# Dense, colorful and varied living ocean floor.
+# IMPORTANT: ocean decoration scans down to the actual seabed, so plants and coral
+# are no longer skipped because getHighestBlockYAt() returns the water surface.
 ocean-life:
   enabled: true
-  attempts-per-chunk: 32
-  seagrass-chance-percent: 58
-  kelp-chance-percent: 24
-  coral-chance-percent: 18
-  meadow-chance-percent: 18
+  attempts-per-chunk: 40
+  seagrass-chance-percent: 62
+  kelp-chance-percent: 28
+  coral-chance-percent: 24
+  meadow-chance-percent: 24
   magma-vent-chance-percent: 2
+
+# Rare handcrafted-style points of interest on the ocean floor.
+ocean-structures:
+  chance-percent: 4
+  shipwreck-percent: 50
+  ruin-percent: 50
 
 village:
   enabled: true
