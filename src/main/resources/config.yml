@@ -20,6 +20,15 @@ ocean:
   height-amplitude: 3
   terrain-scale: 0.004
 
+# Отдельная система живого океанского дна.
+# v2 декорирует дно только после полной генерации чанка и заполняет также старые пустые чанки.
+ocean-life:
+  enabled: true
+  plant-attempts-per-chunk: 44
+  reef-chance-percent: 42
+  ruin-chance-percent: 9
+  shipwreck-chance-percent: 4
+
 island:
   enabled: true
   center-x: 0
