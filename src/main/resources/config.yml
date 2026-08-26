@@ -1,13 +1,14 @@
 # ==========================================================
-# WaterWorld 3.2 — islands, villages, treasures and living ocean
+# WaterWorld 3.3 — fixed archipelago, villages, treasures, living ocean
 # ==========================================================
 world:
   name: waterworld
 
-sea-level: 63
+# Reference map waterline
+sea-level: 62
 
 spawn:
-  preload-chunk-radius: 3
+  preload-chunk-radius: 4
 
 time-cycle:
   enabled: true
@@ -15,42 +16,47 @@ time-cycle:
   night-duration-seconds: 600
   update-interval-ticks: 20
 
+# Calm sandy ocean. The floor is deliberately kept below the surface so it does not form stone shelves.
 ocean:
-  base-height: 35
-  height-amplitude: 12
-  terrain-scale: 0.005
-  cave-scale: 0.018
-  cave-threshold: 0.70
+  base-height: 34
+  height-amplitude: 5
+  terrain-scale: 0.004
 
+# Disabled by default: previous cave carving was producing ugly holes and dark voids under the ocean.
 caves:
-  enabled: true
+  enabled: false
 
+# Main island: about 300x300 blocks, with one compact elongated mountain massif.
 island:
   enabled: true
   center-x: 0
   center-z: 0
-  radius: 100
-  slope-radius: 42
-  height: 14
-  variation: 2.8
-  noise-scale: 0.035
+  radius: 150
+  slope-radius: 24
+  height: 18
+  variation: 2.0
+  noise-scale: 0.022
   mountain:
     enabled: true
     offset-x: 0
-    offset-z: -22
-    radius: 48
-    stretch-x: 1.55
-    stretch-z: 0.85
-    peak-height: 118
-    snow-line: 102
+    offset-z: -24
+    radius: 58
+    stretch-x: 1.35
+    stretch-z: 0.72
+    peak-height: 158
+    snow-line: 128
 
-# Exactly two additional islands: forest and tropical.
+# Exactly two fixed green islands. No random islands and no rocky-island type.
 additional-islands:
   count: 2
-  min-radius: 32
-  max-radius: 72
-  min-distance: 180
-  max-distance: 520
+  forest:
+    x: 0
+    z: -220
+    radius: 35
+  tropical:
+    x: 170
+    z: 190
+    radius: 30
 
 vegetation:
   enabled: true
@@ -58,7 +64,7 @@ vegetation:
   tree-chance-percent: 18
   flower-chance-percent: 32
 
-# Beautiful living ocean floor. These values are intentionally moderate for performance.
+# Beautiful living ocean floor.
 ocean-life:
   enabled: true
   attempts-per-chunk: 14
@@ -66,10 +72,10 @@ ocean-life:
   kelp-chance-percent: 22
   coral-chance-percent: 12
 
-# The main island and both additional islands receive villages when terrain allows it.
+# Every island can have a village. The smaller islands are intentionally included.
 village:
   enabled: true
-  min-island-radius: 40
+  min-island-radius: 24
   additional-island-chance: 1.0
 
 treasures:
