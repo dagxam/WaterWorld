@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld 3.6 — wider archipelago, smaller main mountain, rich living ocean
+# WaterWorld 3.7 — wider archipelago, compact mountains, rich living ocean
 # ==========================================================
 world:
   name: waterworld
@@ -44,18 +44,20 @@ island:
     peak-height: 140
     snow-line: 118
 
-# Exactly two fixed green islands. They are moved farther away from the main island
-# so there is a broad ocean gap and the archipelago feels more open.
+# Exactly two fixed green islands. They are lower and flatter than the main island.
+# Each island has its own terrain height so secondary islands cannot grow large hills.
 additional-islands:
   count: 2
   forest:
     x: 0
     z: -300
     radius: 35
+    height: 9
   tropical:
     x: 240
     z: 280
     radius: 30
+    height: 8
 
 vegetation:
   enabled: true
