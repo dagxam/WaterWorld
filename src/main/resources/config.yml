@@ -1,11 +1,7 @@
 # ==========================================================
-# WaterWorld — настройки основного мира
+# WaterWorld — архипелаг: зелёный главный остров + 2 малых острова
 # ==========================================================
 
-# WaterWorld больше НЕ создаёт второй отдельный мир.
-# Генератор применяется к основному миру сервера, имя которого задано
-# стандартным параметром level-name в server.properties.
-# Если level-name=waterworld, основной мир будет называться waterworld.
 world:
   name: waterworld
 
@@ -19,39 +15,50 @@ time-cycle:
 
 ocean:
   base-height: 35
-  height-amplitude: 12
+  height-amplitude: 8
   terrain-scale: 0.005
-  cave-scale: 0.015
-  cave-threshold: 0.64
-  cave-roof: 8
 
 island:
   enabled: true
   center-x: 0
   center-z: 0
   radius: 100
-  slope-radius: 132
   height: 10
-  variation: 2.2
+  variation: 1.8
   noise-scale: 0.045
   biome: PLAINS
 
-  mountain:
-    enabled: true
+  # ВАЖНО: это именно широкий невысокий холм, не каменная гора.
+  central-hill:
+    height: 9
+    radius: 42
     offset-x: 0
-    offset-z: -22
-    radius: 38
-    peak-height: 92
-    snow-line: 120
-    secondary-peaks: false
-    cave:
-      enabled: true
+    offset-z: -12
 
+# Ровно два малых острова. Они фиксированы и находятся далеко от главного.
+# Никаких случайных каменных островов генератор больше не создаёт.
 additional-islands:
-  count: 1
-  radius: 64
-  min-distance: 180
+  count: 2
+  radius: 28
+  height: 5
+  variation: 1.0
+  min-distance: 240
   max-distance: 420
+  islands:
+    forest:
+      enabled: true
+      x: 0
+      z: -300
+      radius: 28
+      height: 5
+      variation: 1.0
+    tropical:
+      enabled: true
+      x: 240
+      z: 280
+      radius: 24
+      height: 4
+      variation: 0.8
 
 vegetation:
   enabled: true
