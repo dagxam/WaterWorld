@@ -95,7 +95,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             }
         }
 
-        // Отдельная система декорации океанского дна, независимая от декоратора острова.
         if (getConfig().getBoolean("ocean-life.enabled", true)) {
             oceanDecorator = new OceanDecorator(this, sea, cx, cz, radius, oceanRadius, getConfig());
         }
@@ -255,7 +254,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void startCustomTimeCycle(World world) {
         if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
-        int day = getConfig().getInt("time-cycle.day-duration-seconds", 600);
+        // По умолчанию день длится 20 минут, ночь остаётся стандартной — 10 минут.
+        int day = getConfig().getInt("time-cycle.day-duration-seconds", 1200);
         int night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
         if (day <= 0 || night <= 0) return;
         long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
@@ -275,9 +275,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         if (!event.getWorld().getName().equals(worldName)) return;
-        // Критическая правка: не декорируем прямо в ChunkLoad. На свежем чанке этот момент
-        // может наступить раньше ChunkPopulate, из-за чего пустое дно ошибочно получало метку.
-        // Запускаем на следующем тике: готовый чанк уже содержит океанское дно.
         if (oceanDecorator != null) {
             Chunk chunk = event.getChunk();
             getServer().getScheduler().runTask(this, () -> {
@@ -293,7 +290,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         if (!world.getName().equals(worldName)) return;
         Chunk chunk = event.getChunk();
         if (decorator != null) decorator.decorate(world, chunk.getX(), chunk.getZ());
-        // На новом чанке декорируем после базовой генерации океана, до следующего тика ChunkLoad.
         if (oceanDecorator != null) oceanDecorator.decorateOnce(chunk);
         if (treasureDecorator != null) treasureDecorator.decorate(world, chunk.getX(), chunk.getZ());
         if (mobDecorator != null) mobDecorator.populate(chunk);
