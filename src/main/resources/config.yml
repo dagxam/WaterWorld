@@ -8,9 +8,10 @@ world:
 
 sea-level: 63
 
+# День увеличен в 2 раза, ночь оставлена без изменений.
 time-cycle:
   enabled: true
-  day-duration-seconds: 600
+  day-duration-seconds: 1200
   night-duration-seconds: 600
   update-interval-ticks: 1
 
