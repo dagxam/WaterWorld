@@ -67,13 +67,46 @@ public final class WaterGenerator extends ChunkGenerator {
 
                 boolean islandColumn = island != null;
                 int top = Math.min(maxHeight, islandColumn ? Math.max(surface, seaLevel) : seaLevel);
-                for (int y = minHeight + 1; y <= top; y++) {
-                    if (islandColumn) setIslandTerrain(data, lx, lz, y, surface);
-                    else setOceanTerrain(data, lx, lz, y, floor);
-                }
+
+                // Нижний слой всегда полностью из бедрока, а четыре слоя выше
+                // формируют неровную ванильную границу: чем выше, тем реже бедрок.
                 data.setBlock(lx, minHeight, lz, Material.BEDROCK);
+
+                for (int y = minHeight + 1; y <= top; y++) {
+                    if (isBottomBedrock(info.getSeed(), x, y, z, minHeight)) {
+                        data.setBlock(lx, y, lz, Material.BEDROCK);
+                    } else if (islandColumn) {
+                        setIslandTerrain(data, lx, lz, y, surface);
+                    } else {
+                        setOceanTerrain(data, lx, lz, y, floor);
+                    }
+                }
             }
         }
+    }
+
+    /**
+     * Делает нижний бедрок похожим на стандартный Minecraft: снизу он сплошной,
+     * а в следующих четырёх слоях появляются случайные выступы и пустоты.
+     * Используется детерминированный хеш, поэтому форма не меняется при перезагрузке.
+     */
+    private boolean isBottomBedrock(long seed, int x, int y, int z, int minHeight) {
+        int layer = y - minHeight;
+        if (layer <= 0) return true;
+        if (layer > 4) return false;
+
+        int chance = 100 - layer * 20; // 80%, 60%, 40%, 20%
+        long value = seed;
+        value ^= (long) x * 341873128712L;
+        value ^= (long) z * 132897987541L;
+        value ^= (long) y * 42317861L;
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53L;
+        value ^= value >>> 33;
+        int roll = (int) Math.floorMod(value, 100L);
+        return roll < chance;
     }
 
     private IslandLayout.Island islandAt(List<IslandLayout.Island> islands, int x, int z) {
@@ -88,14 +121,14 @@ public final class WaterGenerator extends ChunkGenerator {
 
     private int getOceanFloor(WorldInfo info, int x, int z) {
         return clamp(oceanBaseHeight + (int) Math.round(terrainGen.noise(x, z, 0.5D, 0.5D, true) * oceanHeightAmplitude),
-                info.getMinHeight() + 2, seaLevel - 10);
+                info.getMinHeight() + 6, seaLevel - 10);
     }
 
     private void setOceanTerrain(ChunkData data, int lx, int lz, int y, int floor) {
         if (y > floor) data.setBlock(lx, y, lz, Material.WATER);
-        else if (y <= 0) data.setBlock(lx, y, lz, Material.DEEPSLATE);
-        else if (y < floor - 6) data.setBlock(lx, y, lz, Material.STONE);
-        else if (y < floor - 3) data.setBlock(lx, y, lz, Material.GRAVEL);
+        else if (y < floor - 6) data.setBlock(lx, y, lz, Material.DEEPSLATE);
+        else if (y < floor - 3) data.setBlock(lx, y, lz, Material.STONE);
+        else if (y < floor - 1) data.setBlock(lx, y, lz, Material.GRAVEL);
         else data.setBlock(lx, y, lz, Material.SAND);
     }
 
@@ -104,7 +137,7 @@ public final class WaterGenerator extends ChunkGenerator {
             data.setBlock(lx, y, lz, y <= seaLevel ? Material.WATER : Material.AIR);
             return;
         }
-        if (y <= 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
+        if (y < 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
         if (surface <= seaLevel) {
             data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
             return;
