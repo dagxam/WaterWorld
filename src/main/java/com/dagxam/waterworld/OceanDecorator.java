@@ -13,11 +13,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Random;
 
-/**
- * Отдельная система живого океанского дна.
- * Важно: декорирование выполняется только после готовой генерации чанка и помечается версией v2,
- * поэтому старые пустые чанки могут быть заполнены заново после обновления плагина.
- */
+/** Живое, но аккуратное океанское дно: низкая растительность, рифы и редкие структуры. */
 public final class OceanDecorator {
     private final JavaPlugin plugin;
     private final int seaLevel;
@@ -43,7 +39,7 @@ public final class OceanDecorator {
         this.reefChance = clampPercent(config.getInt("ocean-life.reef-chance-percent", 42));
         this.ruinChance = clampPercent(config.getInt("ocean-life.ruin-chance-percent", 9));
         this.shipwreckChance = clampPercent(config.getInt("ocean-life.shipwreck-chance-percent", 4));
-        this.decoratedKey = new NamespacedKey(plugin, "ocean-decor-v2");
+        this.decoratedKey = new NamespacedKey(plugin, "ocean-decor-v3");
     }
 
     public void decorateOnce(Chunk chunk) {
@@ -61,14 +57,11 @@ public final class OceanDecorator {
                 ^ 0x4F4345414E444543L;
         Random random = new Random(seed);
 
-        int placed = 0;
-        for (int i = 0; i < plantAttempts; i++) placed += placePlant(world, chunk, random) ? 1 : 0;
-        if (random.nextInt(100) < reefChance) placed += placeCoralReef(world, chunk, random);
-        if (random.nextInt(100) < ruinChance) placed += placeOceanRuin(world, chunk, random);
-        if (random.nextInt(100) < shipwreckChance) placed += placeShipwreck(world, chunk, random);
+        for (int i = 0; i < plantAttempts; i++) placePlant(world, chunk, random);
+        if (random.nextInt(100) < reefChance) placeCoralReef(world, chunk, random);
+        if (random.nextInt(100) < ruinChance) placeOceanRuin(world, chunk, random);
+        if (random.nextInt(100) < shipwreckChance) placeShipwreck(world, chunk, random);
 
-        // Чанк отмечаем только после попыток декорирования на уже готовом дне.
-        // Даже если конкретный случайно выбранный объект не подошёл, обычная растительность уже была обработана.
         chunk.getPersistentDataContainer().set(decoratedKey, PersistentDataType.BYTE, (byte) 1);
     }
 
@@ -81,22 +74,16 @@ public final class OceanDecorator {
         Block water = world.getBlockAt(x, floorY + 1, z);
         if (water.getType() != Material.WATER) return false;
 
+        // Длинную ламинарии полностью убираем. Дно остаётся низким и открытым,
+        // как красивое мелководное/рифовое дно, а не заросли стеной водорослей.
         int roll = random.nextInt(100);
-        if (roll < 40) {
+        if (roll < 48) {
             water.setType(Material.SEAGRASS);
-        } else if (roll < 70) {
-            int height = 2 + random.nextInt(7);
-            for (int dy = 1; dy <= height && floorY + dy < seaLevel; dy++) {
-                Block block = world.getBlockAt(x, floorY + dy, z);
-                if (block.getType() != Material.WATER) break;
-                block.setType(Material.KELP);
-            }
-        } else if (roll < 82) {
+        } else if (roll < 66) {
             water.setType(Material.SEA_PICKLE);
-        } else if (roll < 92) {
+        } else if (roll < 86) {
             water.setType(coralPlant(random));
         } else {
-            // Небольшие одиночные коралловые образования между растениями.
             water.setType(coralBlock(random));
             if (floorY + 2 < seaLevel && world.getBlockAt(x, floorY + 2, z).getType() == Material.WATER) {
                 world.getBlockAt(x, floorY + 2, z).setType(coralPlant(random));
@@ -132,12 +119,6 @@ public final class OceanDecorator {
                         && world.getBlockAt(x, y + 2, z).getType() == Material.WATER) {
                     world.getBlockAt(x, y + 2, z).setType(coralPlant(random));
                 }
-                if (random.nextInt(100) < 28 && y + 2 < seaLevel
-                        && world.getBlockAt(x + (random.nextBoolean() ? 1 : -1), y + 1, z).getType() == Material.WATER) {
-                    // Небольшая цветная ветка рифа, но только внутри чанка.
-                    int bx = x + (random.nextBoolean() ? 1 : -1);
-                    if (insideChunk(chunk, bx, z)) world.getBlockAt(bx, y + 1, z).setType(coralPlant(random));
-                }
             }
         }
         return placed;
@@ -151,7 +132,6 @@ public final class OceanDecorator {
 
         Material[] stones = {Material.PRISMARINE, Material.PRISMARINE_BRICKS, Material.MOSSY_STONE_BRICKS};
         int placed = 0;
-        // Разрушенный фундамент.
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 if (Math.abs(dx) == 2 && Math.abs(dz) == 2) continue;
@@ -166,7 +146,6 @@ public final class OceanDecorator {
                 placed++;
             }
         }
-        // Несколько сломанных колонн.
         for (int i = 0; i < 3; i++) {
             int px = x + (random.nextBoolean() ? 2 : -2);
             int pz = z - 1 + random.nextInt(3);
@@ -235,7 +214,6 @@ public final class OceanDecorator {
         }
     }
 
-    /** Находит верхний твёрдый блок именно под толщей воды, а не верх растения/коралла. */
     private int findOceanFloor(World world, int x, int z) {
         int start = Math.min(seaLevel - 1, world.getMaxHeight() - 2);
         for (int y = start; y > world.getMinHeight(); y--) {
