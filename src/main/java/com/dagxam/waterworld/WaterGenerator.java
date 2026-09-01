@@ -11,7 +11,7 @@ import org.bukkit.util.noise.SimplexOctaveGenerator;
 import java.util.List;
 import java.util.Random;
 
-/** Генерирует только океан, один центральный зелёный остров и малые зелёные острова. */
+/** Генерирует океан, один центральный зелёный остров и малые зелёные острова. */
 public final class WaterGenerator extends ChunkGenerator {
     private final int seaLevel, oceanBaseHeight, oceanHeightAmplitude;
     private final double terrainScale;
@@ -52,9 +52,8 @@ public final class WaterGenerator extends ChunkGenerator {
         int minHeight = info.getMinHeight();
         int maxHeight = info.getMaxHeight() - 1;
 
-        // Критически важно: очищаем весь буфер чанка перед собственной генерацией.
-        // Иначе остатки предварительной/ванильной генерации выше seaLevel могут
-        // сохраниться в чанках возле дополнительных островов как огромные каменные земли.
+        // Полностью очищаем буфер, чтобы ванильный генератор не оставлял
+        // каменные территории возле дополнительных островов.
         data.setRegion(0, minHeight, 0, 16, maxHeight + 1, 16, Material.AIR);
 
         for (int lx = 0; lx < 16; lx++) {
@@ -68,8 +67,6 @@ public final class WaterGenerator extends ChunkGenerator {
                 boolean islandColumn = island != null;
                 int top = Math.min(maxHeight, islandColumn ? Math.max(surface, seaLevel) : seaLevel);
 
-                // Нижний слой всегда полностью из бедрока, а четыре слоя выше
-                // формируют неровную ванильную границу: чем выше, тем реже бедрок.
                 data.setBlock(lx, minHeight, lz, Material.BEDROCK);
 
                 for (int y = minHeight + 1; y <= top; y++) {
@@ -85,17 +82,11 @@ public final class WaterGenerator extends ChunkGenerator {
         }
     }
 
-    /**
-     * Делает нижний бедрок похожим на стандартный Minecraft: снизу он сплошной,
-     * а в следующих четырёх слоях появляются случайные выступы и пустоты.
-     * Используется детерминированный хеш, поэтому форма не меняется при перезагрузке.
-     */
     private boolean isBottomBedrock(long seed, int x, int y, int z, int minHeight) {
         int layer = y - minHeight;
         if (layer <= 0) return true;
         if (layer > 4) return false;
-
-        int chance = 100 - layer * 20; // 80%, 60%, 40%, 20%
+        int chance = 100 - layer * 20;
         long value = seed;
         value ^= (long) x * 341873128712L;
         value ^= (long) z * 132897987541L;
@@ -105,8 +96,7 @@ public final class WaterGenerator extends ChunkGenerator {
         value ^= value >>> 33;
         value *= 0xc4ceb9fe1a85ec53L;
         value ^= value >>> 33;
-        int roll = (int) Math.floorMod(value, 100L);
-        return roll < chance;
+        return Math.floorMod(value, 100L) < chance;
     }
 
     private IslandLayout.Island islandAt(List<IslandLayout.Island> islands, int x, int z) {
@@ -208,6 +198,13 @@ public final class WaterGenerator extends ChunkGenerator {
     @Override public boolean shouldGenerateNoise() { return true; }
     @Override public boolean shouldGenerateSurface() { return false; }
     @Override public boolean shouldGenerateCaves() { return false; }
-    @Override public boolean shouldGenerateDecorations() { return false; }
+
+    /**
+     * Возвращаем стандартный этап decorations, чтобы Paper/Minecraft сам
+     * выполнил ванильную генерацию руд по seed, высоте, типу руды и биому.
+     * Поэтому WaterWorld больше не реализует собственную систему руд.
+     */
+    @Override public boolean shouldGenerateDecorations() { return true; }
+
     @Override public boolean shouldGenerateMobs() { return true; }
 }
