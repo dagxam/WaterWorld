@@ -52,8 +52,6 @@ public final class WaterGenerator extends ChunkGenerator {
         int minHeight = info.getMinHeight();
         int maxHeight = info.getMaxHeight() - 1;
 
-        // Полностью очищаем буфер, чтобы ванильный генератор не оставлял
-        // каменные территории возле дополнительных островов.
         data.setRegion(0, minHeight, 0, 16, maxHeight + 1, 16, Material.AIR);
 
         for (int lx = 0; lx < 16; lx++) {
@@ -80,6 +78,75 @@ public final class WaterGenerator extends ChunkGenerator {
                 }
             }
         }
+
+        // Водный мир использует собственный рельеф, поэтому ванильный noise-stage
+        // не знает о наших слоях. Размещаем руды отдельным детерминированным этапом,
+        // сохраняя стандартную логику пород: обычные руды в STONE, глубокие варианты
+        // в DEEPSLATE. Распределение ограничено высотой и создаёт жилы, а не шум по блокам.
+        generateOres(info, chunkX, chunkZ, data);
+    }
+
+    private void generateOres(WorldInfo info, int chunkX, int chunkZ, ChunkData data) {
+        long seed = mixSeed(info.getSeed(), chunkX, chunkZ);
+        Random oreRandom = new Random(seed);
+        int min = info.getMinHeight();
+
+        generateOre(data, oreRandom, min, Material.COAL_ORE, Material.DEEPSLATE_COAL_ORE,
+                12, 0, 96, 17, 10);
+        generateOre(data, oreRandom, min, Material.IRON_ORE, Material.DEEPSLATE_IRON_ORE,
+                10, -24, 72, 16, 10);
+        generateOre(data, oreRandom, min, Material.COPPER_ORE, Material.DEEPSLATE_COPPER_ORE,
+                9, 0, 72, 16, 10);
+        generateOre(data, oreRandom, min, Material.GOLD_ORE, Material.DEEPSLATE_GOLD_ORE,
+                6, -16, 32, 8, 8);
+        generateOre(data, oreRandom, min, Material.REDSTONE_ORE, Material.DEEPSLATE_REDSTONE_ORE,
+                8, -64, 16, 8, 7);
+        generateOre(data, oreRandom, min, Material.LAPIS_ORE, Material.DEEPSLATE_LAPIS_ORE,
+                5, -32, 32, 6, 6);
+        generateOre(data, oreRandom, min, Material.DIAMOND_ORE, Material.DEEPSLATE_DIAMOND_ORE,
+                5, -64, 16, 4, 5);
+        generateOre(data, oreRandom, min, Material.EMERALD_ORE, Material.DEEPSLATE_EMERALD_ORE,
+                2, -16, 32, 2, 3);
+    }
+
+    private void generateOre(ChunkData data, Random random, int minHeight,
+                             Material stoneOre, Material deepslateOre,
+                             int attempts, int minY, int maxY, int veinSize, int spread) {
+        int low = Math.max(minHeight + 1, minY);
+        int high = Math.min(128, maxY);
+        if (low > high) return;
+
+        for (int i = 0; i < attempts; i++) {
+            int x = random.nextInt(16);
+            int z = random.nextInt(16);
+            int y = low + random.nextInt(high - low + 1);
+
+            for (int n = 0; n < veinSize; n++) {
+                int dx = random.nextInt(spread * 2 + 1) - spread;
+                int dy = random.nextInt(3) - 1;
+                int dz = random.nextInt(spread * 2 + 1) - spread;
+                int bx = x + dx;
+                int by = y + dy;
+                int bz = z + dz;
+                if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16 || by < minHeight || by >= 128) continue;
+
+                Material host = data.getType(bx, by, bz);
+                if (host == Material.STONE) {
+                    data.setBlock(bx, by, bz, stoneOre);
+                } else if (host == Material.DEEPSLATE) {
+                    data.setBlock(bx, by, bz, deepslateOre);
+                }
+            }
+        }
+    }
+
+    private static long mixSeed(long seed, int chunkX, int chunkZ) {
+        long value = seed ^ ((long) chunkX * 341873128712L) ^ ((long) chunkZ * 132897987541L);
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53L;
+        return value ^ (value >>> 33);
     }
 
     private boolean isBottomBedrock(long seed, int x, int y, int z, int minHeight) {
@@ -198,13 +265,6 @@ public final class WaterGenerator extends ChunkGenerator {
     @Override public boolean shouldGenerateNoise() { return true; }
     @Override public boolean shouldGenerateSurface() { return false; }
     @Override public boolean shouldGenerateCaves() { return false; }
-
-    /**
-     * Возвращаем стандартный этап decorations, чтобы Paper/Minecraft сам
-     * выполнил ванильную генерацию руд по seed, высоте, типу руды и биому.
-     * Поэтому WaterWorld больше не реализует собственную систему руд.
-     */
     @Override public boolean shouldGenerateDecorations() { return true; }
-
     @Override public boolean shouldGenerateMobs() { return true; }
 }
