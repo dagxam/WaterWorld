@@ -1,5 +1,5 @@
 # ==========================================================
-# WaterWorld — один главный зелёный остров + два малых острова
+# WaterWorld — один главный зелёный остров + случайные малые острова
 # ==========================================================
 
 world:
@@ -7,24 +7,17 @@ world:
 
 sea-level: 63
 
-# Управление временем WaterWorld.
-# По умолчанию выключено, чтобы RealisticSeasons мог полностью
-# управлять длительностью дня и ночи без конфликта.
-# Если RealisticSeasons не установлен, можно включить true.
 time-cycle:
   enabled: false
   day-duration-seconds: 1200
   night-duration-seconds: 600
   update-interval-ticks: 1
 
-# Океан должен быть спокойным: без каменных материков и огромных подводных гор.
 ocean:
   base-height: 35
   height-amplitude: 3
   terrain-scale: 0.004
 
-# Отдельная система живого океанского дна.
-# v2 декорирует дно только после полной генерации чанка и заполняет также старые пустые чанки.
 ocean-life:
   enabled: true
   plant-attempts-per-chunk: 44
@@ -41,41 +34,27 @@ island:
   variation: 1.2
   noise-scale: 0.035
   biome: PLAINS
-
-  # Старый каменный генератор гор полностью выключен.
   mountain:
     enabled: false
-
-  # Только широкий зелёный холм в центре, без острых вершин и снега.
   central-hill:
     height: 7
     radius: 48
     offset-x: 0
     offset-z: -12
 
-# Ровно два небольших зелёных острова, далеко от главного.
+# 8–12 небольших островов. Координаты не задаются вручную:
+# каждый новый seed получает своё случайное расположение.
 additional-islands:
-  count: 2
-  radius: 26
-  height: 4
+  count-min: 8
+  count-max: 12
+  radius-min: 15
+  radius-max: 24
+  height-min: 3
+  height-max: 5
   variation: 0.7
-  min-distance: 260
-  max-distance: 420
-  islands:
-    forest:
-      enabled: true
-      x: 0
-      z: -320
-      radius: 26
-      height: 4
-      variation: 0.7
-    tropical:
-      enabled: true
-      x: 280
-      z: 300
-      radius: 22
-      height: 3
-      variation: 0.6
+  min-distance: 700
+  max-distance: 6000
+  islands: {}
 
 vegetation:
   enabled: true
@@ -92,4 +71,4 @@ animals:
   enabled: true
   ocean-radius: 600
 
-# Руды WaterWorld не генерирует. Единственная система генерации руд — BedrockOres/Ore-Plugin.
+# Руды генерируются отдельной системой WaterWorld в Stone и Deepslate.
