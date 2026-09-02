@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -51,9 +50,7 @@ public final class RestoreManager implements Listener, CommandExecutor, TabCompl
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBlockBreak(BlockBreakEvent event) {
-        remember(event.getBlock());
-    }
+    public void onBlockBreak(BlockBreakEvent event) { remember(event.getBlock()); }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityExplode(EntityExplodeEvent event) {
@@ -81,19 +78,17 @@ public final class RestoreManager implements Listener, CommandExecutor, TabCompl
         long r2 = (long) r * r;
         List<String> remove = new ArrayList<>();
         int restored = 0;
-
         for (Map.Entry<String, SavedBlock> entry : history.entrySet()) {
             String[] parts = entry.getKey().split("\\|", 4);
             if (parts.length != 4 || !parts[0].equals(world.getName())) continue;
             int x, y, z;
             try { x = Integer.parseInt(parts[1]); y = Integer.parseInt(parts[2]); z = Integer.parseInt(parts[3]); }
             catch (NumberFormatException ignored) { continue; }
-            long dx = x - center.getBlockX();
-            long dz = z - center.getBlockZ();
+            long dx = x - center.getBlockX(), dz = z - center.getBlockZ();
             if (dx * dx + dz * dz > r2) continue;
-            Block block = world.getBlockAt(x, y, z);
             SavedBlock saved = entry.getValue();
             try {
+                Block block = world.getBlockAt(x, y, z);
                 block.setBlockData(Bukkit.createBlockData(saved.blockData), false);
                 if (saved.contents != null && block.getState() instanceof Container container) {
                     container.getInventory().setContents(cloneContents(saved.contents));
@@ -111,8 +106,6 @@ public final class RestoreManager implements Listener, CommandExecutor, TabCompl
     }
 
     public int getTrackedCount() { return history.size(); }
-    public int getDefaultRadius() { return defaultRadius; }
-    public int getMaxRadius() { return maxRadius; }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -170,7 +163,7 @@ public final class RestoreManager implements Listener, CommandExecutor, TabCompl
         YamlConfiguration yaml = new YamlConfiguration();
         for (Map.Entry<String, SavedBlock> entry : history.entrySet()) {
             yaml.set(entry.getKey() + ".data", entry.getValue().blockData);
-            if (entry.getValue().contents != null) yaml.set(entry.getKey() + ".inventory", List.of(entry.getValue().contents));
+            if (entry.getValue().contents != null) yaml.set(entry.getKey() + ".inventory", java.util.Arrays.asList(entry.getValue().contents));
         }
         try {
             plugin.getDataFolder().mkdirs();
