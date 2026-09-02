@@ -1,6 +1,6 @@
 package com.dagxam.waterworld;
 
-import org.bukkit.configuration.FileConfiguration;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.ArrayList;
 import java.util.Collections;
