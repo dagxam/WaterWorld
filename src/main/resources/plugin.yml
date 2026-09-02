@@ -1,6 +1,15 @@
 name: WaterWorld
-version: 2.7
+version: 2.8
 main: com.dagxam.waterworld.WaterWorldPlugin
 api-version: '26.2'
 load: STARTUP
 description: "Основной мир сервера генерируется WaterWorld. Чистый океан, один главный остров, малые острова, плавные берега, растительность и животные."
+commands:
+  wwrestore:
+    description: "Восстанавливает разрушенные блоки вокруг игрока"
+    usage: "/wwrestore [радиус]"
+    permission: waterworld.restore
+permissions:
+  waterworld.restore:
+    description: "Разрешает восстанавливать разрушенный WaterWorld"
+    default: op
