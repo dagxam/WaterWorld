@@ -2,6 +2,7 @@ package com.dagxam.waterworld;
 
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
 import java.util.Random;
@@ -14,6 +15,15 @@ public final class NaturalIslandDecorator {
     public NaturalIslandDecorator(int seaLevel, IslandLayout layout) {
         this.seaLevel = seaLevel;
         this.layout = layout;
+        JavaPlugin providing = JavaPlugin.getProvidingPlugin(NaturalIslandDecorator.class);
+        if (providing instanceof WaterWorldPlugin plugin) {
+            RestoreManager restoreManager = new RestoreManager(plugin);
+            plugin.getServer().getPluginManager().registerEvents(restoreManager, plugin);
+            if (plugin.getCommand("wwrestore") != null) {
+                plugin.getCommand("wwrestore").setExecutor(restoreManager);
+                plugin.getCommand("wwrestore").setTabCompleter(restoreManager);
+            }
+        }
     }
 
     public void decorate(World world, int chunkX, int chunkZ) {
@@ -78,7 +88,7 @@ public final class NaturalIslandDecorator {
             }
             case "swamp" -> {
                 if (random.nextInt(100) < 18) placeTree(world, x, y, z, random, Material.OAK_LOG, Material.OAK_LEAVES, 4, 6);
-                else if (random.nextInt(100) < 25) placeGrass(world, y <= seaLevel + 1 ? x : x, y, z, Material.SUGAR_CANE);
+                else if (random.nextInt(100) < 25) placeGrass(world, x, y, z, Material.SUGAR_CANE);
                 else placeGrass(world, x, y, z, Material.FERN);
             }
             case "dark_forest" -> {
