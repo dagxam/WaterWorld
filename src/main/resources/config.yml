@@ -42,11 +42,11 @@ island:
     offset-x: 0
     offset-z: -12
 
-# 8–12 небольших островов. Координаты не задаются вручную:
+# 10–20 небольших островов. Координаты не задаются вручную:
 # каждый новый seed получает своё случайное расположение.
 additional-islands:
-  count-min: 8
-  count-max: 12
+  count-min: 10
+  count-max: 20
   radius-min: 15
   radius-max: 24
   height-min: 3
