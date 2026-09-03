@@ -29,7 +29,7 @@ import java.util.Properties;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "8";
+    private static final String LAYOUT_VERSION = "9";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
@@ -55,7 +55,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld v8 обнаружил мир со старой генерацией.");
+            getLogger().warning("WaterWorld v9 обнаружил мир со старой генерацией.");
             getLogger().warning("Старые чанки сохранены в резервную копию.");
             getLogger().warning("Сервер остановится сейчас. Запустите его ещё раз для чистой генерации.");
             Bukkit.shutdown();
@@ -127,7 +127,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         setIslandSpawn(world);
         if (mobDecorator != null) mobDecorator.initializeWorld(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld v8 успешно запущен. Основной мир: " + world.getName());
+        getLogger().info("WaterWorld v9 успешно запущен. Основной мир: " + world.getName());
     }
 
     private String readLevelName() {
@@ -254,7 +254,6 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void startCustomTimeCycle(World world) {
         if (!getConfig().getBoolean("time-cycle.enabled", true)) return;
-        // По умолчанию день длится 20 минут, ночь остаётся стандартной — 10 минут.
         int day = getConfig().getInt("time-cycle.day-duration-seconds", 1200);
         int night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
         if (day <= 0 || night <= 0) return;
