@@ -24,7 +24,9 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.Properties;
+import java.util.stream.Stream;
 
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
@@ -56,7 +58,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     public void onEnable() {
         if (restartRequired) {
             getLogger().warning("WaterWorld v9 обнаружил мир со старой генерацией.");
-            getLogger().warning("Старые чанки сохранены в резервную копию.");
+            getLogger().warning("Старые чанки сохранены в резервной копии.");
             getLogger().warning("Сервер остановится сейчас. Запустите его ещё раз для чистой генерации.");
             Bukkit.shutdown();
             return;
@@ -155,7 +157,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
         if (needsLayoutReset) {
             if (!backupExistingWorld()) {
-                getLogger().severe("WaterWorld не может безопасно пересоздать старый мир.");
+                getLogger().severe("WaterWorld не смог сделать backup мира '" + worldName + "'.");
+                getLogger().severe("Генерация остановлена, чтобы не потерять существующий мир.");
                 return false;
             }
             section.set("generator", GENERATOR_NAME);
@@ -171,7 +174,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
         if (alreadyConfigured) return false;
         if (hasExistingWorld && !backupExistingWorld()) {
-            getLogger().severe("Не удалось сохранить существующий мир.");
+            getLogger().severe("WaterWorld не смог сделать backup существующего мира.");
+            getLogger().severe("Генератор не будет принудительно заменять мир.");
             return false;
         }
         section.set("generator", GENERATOR_NAME);
@@ -209,16 +213,88 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Path world = new File(serverRoot(), worldName).toPath();
         if (!Files.isDirectory(world)) return true;
         if (!Files.exists(world.resolve("level.dat")) && !Files.isDirectory(world.resolve("region"))) return true;
+
         Path backup = world.resolveSibling(worldName + "-waterworld-backup-" + BACKUP_TIME.format(LocalDateTime.now()));
         try {
-            try { Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE); }
-            catch (IOException ignored) { Files.move(world, backup); }
-            getLogger().warning("Старый мир сохранён в: " + backup.getFileName());
+            Files.move(world, backup, StandardCopyOption.ATOMIC_MOVE);
+            getLogger().warning("Старый мир перемещён в backup: " + backup.getFileName());
             return true;
-        } catch (IOException e) {
-            getLogger().warning("Не удалось сохранить старый мир: " + e.getMessage());
+        } catch (IOException atomicError) {
+            getLogger().warning("Atomic backup не удался: " + atomicError.getMessage());
+        }
+
+        try {
+            Files.move(world, backup);
+            getLogger().warning("Старый мир перемещён в backup: " + backup.getFileName());
+            return true;
+        } catch (IOException moveError) {
+            getLogger().warning("Обычное перемещение мира тоже не удалось: " + moveError.getMessage());
+            getLogger().warning("Пробую безопасную полную копию мира.");
+        }
+
+        try {
+            copyDirectory(world, backup);
+            getLogger().warning("Полная копия мира создана: " + backup.getFileName());
+        } catch (IOException copyError) {
+            getLogger().severe("Не удалось скопировать мир в backup: " + copyError.getMessage());
+            deleteDirectoryQuietly(backup);
             return false;
         }
+
+        try {
+            deleteDirectory(world);
+            getLogger().warning("Исходный мир удалён после успешного backup.");
+            return true;
+        } catch (IOException deleteError) {
+            getLogger().severe("Backup создан, но исходный мир нельзя удалить: " + deleteError.getMessage());
+            getLogger().severe("Обычно это означает, что один из файлов мира занят другим процессом или плагином.");
+            getLogger().severe("Исходный мир оставлен нетронутым.");
+            deleteDirectoryQuietly(backup);
+            return false;
+        }
+    }
+
+    private void copyDirectory(Path source, Path target) throws IOException {
+        try (Stream<Path> paths = Files.walk(source)) {
+            for (Path path : (Iterable<Path>) paths::iterator) {
+                Path relative = source.relativize(path);
+                Path destination = target.resolve(relative);
+                if (Files.isDirectory(path)) {
+                    Files.createDirectories(destination);
+                } else {
+                    Files.createDirectories(destination.getParent());
+                    Files.copy(path, destination, StandardCopyOption.COPY_ATTRIBUTES);
+                }
+            }
+        }
+    }
+
+    private void deleteDirectory(Path directory) throws IOException {
+        try (Stream<Path> paths = Files.walk(directory)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.delete(path);
+                } catch (IOException e) {
+                    throw new BackupDeleteException(e);
+                }
+            });
+        } catch (BackupDeleteException e) {
+            throw e.cause;
+        }
+    }
+
+    private void deleteDirectoryQuietly(Path directory) {
+        if (!Files.exists(directory)) return;
+        try {
+            deleteDirectory(directory);
+        } catch (IOException e) {
+            getLogger().warning("Не удалось удалить неполный backup: " + directory.getFileName() + ": " + e.getMessage());
+        }
+    }
+
+    private static final class BackupDeleteException extends RuntimeException {
+        private final IOException cause;
+        private BackupDeleteException(IOException cause) { this.cause = cause; }
     }
 
     private File serverRoot() {
