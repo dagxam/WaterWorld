@@ -22,6 +22,10 @@ import java.util.Random;
  *
  * На каждом острове создаётся от 3 до 7 тайников. Часть сундуков содержит карту,
  * ведущую к другому закопанному сундуку, остальные содержат ценные предметы.
+ *
+ * Важно: генератор не должен принудительно загружать соседние чанки из
+ * ChunkLoadEvent/ChunkPopulateEvent. На Paper 26.3 это может привести к
+ * повторному входу в DistanceManager и падению с NullPointerException.
  */
 public final class TreasureDecorator {
     private static final long TREASURE_SALT = 0x5452454153555245L;
@@ -43,6 +47,10 @@ public final class TreasureDecorator {
     /**
      * Вызывается для чанка. Раскладка сундуков заранее вычисляется от seed мира,
      * поэтому каждый сундук создаётся только в своём чанке и не дублируется.
+     *
+     * Здесь запрещена принудительная загрузка других чанков. Если кандидат
+     * попал в ещё не загруженный чанк, он будет обработан при следующей загрузке
+     * этого чанка.
      */
     public void decorate(World world, int chunkX, int chunkZ) {
         for (IslandLayout.Island island : layout.get(world.getSeed())) {
@@ -103,6 +111,13 @@ public final class TreasureDecorator {
                 }
                 if (tooClose) continue;
 
+                int candidateChunkX = Math.floorDiv(x, 16);
+                int candidateChunkZ = Math.floorDiv(z, 16);
+
+                // Никогда не вызываем getHighestBlockYAt() для незагруженного чанка.
+                // В Paper 26.3 это особенно важно во время ChunkLoadEvent.
+                if (!world.isChunkLoaded(candidateChunkX, candidateChunkZ)) continue;
+
                 int surfaceY = world.getHighestBlockYAt(x, z);
                 if (surfaceY <= seaLevel + 1) continue;
                 Material surface = world.getBlockAt(x, surfaceY, z).getType();
@@ -120,11 +135,19 @@ public final class TreasureDecorator {
             if (site != null) sites.add(site);
         }
 
-        // На маленьком острове может не хватить точек: гарантируем минимум 3 попытками ближе к центру.
+        // На маленьком острове может не хватить точек. Работаем только с уже
+        // загруженными чанками, чтобы не запускать вложенную генерацию.
         int fallback = 0;
         while (sites.size() < 3 && fallback < 40) {
             int x = island.x() + random.nextInt(Math.max(7, usableRadius)) - Math.max(3, usableRadius / 2);
             int z = island.z() + random.nextInt(Math.max(7, usableRadius)) - Math.max(3, usableRadius / 2);
+            int candidateChunkX = Math.floorDiv(x, 16);
+            int candidateChunkZ = Math.floorDiv(z, 16);
+            if (!world.isChunkLoaded(candidateChunkX, candidateChunkZ)) {
+                fallback++;
+                continue;
+            }
+
             int surfaceY = world.getHighestBlockYAt(x, z);
             if (surfaceY > seaLevel + 1) {
                 Material surface = world.getBlockAt(x, surfaceY, z).getType();
