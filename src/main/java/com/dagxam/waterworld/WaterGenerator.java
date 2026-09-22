@@ -308,46 +308,15 @@ public final class WaterGenerator extends ChunkGenerator {
                     return island.biome();
                 }
 
-                return Biome.WARM_OCEAN;
+                return layout.getOceanBiome();
             }
 
             @Override
             public List<Biome> getBiomes(WorldInfo worldInfo) {
                 List<Biome> biomes = new java.util.ArrayList<>();
-                biomes.add(Biome.WARM_OCEAN);
-
-                /*
-                 * Добавляем только настроенные островные биомы.
-                 * Это важно для клиента/движка биом-провайдера.
-                 */
-                for (String raw : java.util.Objects.requireNonNullElseGet(
-                        getConfiguredBiomeNames(),
-                        List::<String>of
-                )) {
-                    try {
-                        biomes.add(Biome.valueOf(raw));
-                    } catch (IllegalArgumentException ignored) {
-                        // skip invalid
-                    }
-                }
-
-                return List.copyOf(
-                        new java.util.LinkedHashSet<>(biomes)
-                );
-            }
-
-            private List<String> getConfiguredBiomeNames() {
-                return List.of(
-                        "PLAINS",
-                        "FOREST",
-                        "BIRCH_FOREST",
-                        "TAIGA",
-                        "JUNGLE",
-                        "SAVANNA",
-                        "DARK_FOREST",
-                        "SWAMP",
-                        "FLOWER_FOREST"
-                );
+                biomes.add(layout.getOceanBiome());
+                biomes.addAll(layout.getConfiguredBiomes());
+                return List.copyOf(new java.util.LinkedHashSet<>(biomes));
             }
         };
     }
