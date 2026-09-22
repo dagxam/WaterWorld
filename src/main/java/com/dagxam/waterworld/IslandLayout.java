@@ -1,24 +1,26 @@
 package com.dagxam.waterworld;
 
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
 import org.bukkit.block.Biome;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
 /**
- * Размещает малые острова автономно по сетке.
+ * Детерминированная раскладка главного и автономных малых островов.
  *
- * Главный остров остаётся фиксированным.
- * Малые острова не создаются одним общим списком заранее:
- * каждая ячейка пространства имеет собственное детерминированное решение.
+ * Каждый малый остров определяется только seed мира и координатами ячейки.
+ * Поэтому результат не зависит от порядка загрузки чанков и сохраняется
+ * после перезапуска сервера.
  *
- * Благодаря координатам ячейки + seed мира результат:
- * - одинаков после перезапуска;
- * - одинаков после выгрузки/загрузки чанков;
- * - не зависит от порядка загрузки чанков;
- * - не требует записи координат каждого острова в отдельный файл.
+ * Биомы разрешаются через data-driven registry Paper 26.3, а не через
+ * устаревшие Biome.valueOf()/Biome.values().
  */
 public final class IslandLayout {
     public record Island(
@@ -80,24 +82,29 @@ public final class IslandLayout {
     }
 
     public List<Island> get(long worldSeed) {
-        List<Island> result = new ArrayList<>(1);
-        result.add(createMainIsland());
-        return List.copyOf(result);
+        return List.of(createMainIsland());
     }
 
     /**
-     * Возвращает остров, влияющий на конкретную точку.
-     * Для каждой точки рассматриваются только несколько ближайших ячеек.
+     * Возвращает биомы, которые реально могут быть назначены малым островам.
+     * Используется BiomeProvider для корректного списка возможных биомов.
      */
+    public List<Biome> getConfiguredBiomes() {
+        List<Biome> result = new ArrayList<>(biomeOptions.size() + 1);
+        result.add(createMainIsland().biome());
+        for (BiomeOption option : biomeOptions) {
+            if (!result.contains(option.biome())) {
+                result.add(option.biome());
+            }
+        }
+        return List.copyOf(result);
+    }
+
     public Island getIslandAt(long worldSeed, int x, int z) {
         Island main = createMainIsland();
-        if (isInsideMain(main, x, z)) {
-            return main;
-        }
+        if (isInsideMain(main, x, z)) return main;
 
-        if (!additionalEnabled || biomeOptions.isEmpty()) {
-            return null;
-        }
+        if (!additionalEnabled || biomeOptions.isEmpty()) return null;
 
         int cellX = Math.floorDiv(x, cellSizeChunks * 16);
         int cellZ = Math.floorDiv(z, cellSizeChunks * 16);
@@ -107,19 +114,14 @@ public final class IslandLayout {
         for (int dx = -neighborCells; dx <= neighborCells; dx++) {
             for (int dz = -neighborCells; dz <= neighborCells; dz++) {
                 Candidate candidate = generateCandidate(worldSeed, cellX + dx, cellZ + dz);
-                if (candidate == null) {
-                    continue;
-                }
+                if (candidate == null) continue;
 
                 long distanceSquared = distanceSquared(
-                        x, z,
-                        candidate.island.x(), candidate.island.z()
+                        x, z, candidate.island.x(), candidate.island.z()
                 );
                 int influence = getInfluenceRadius(candidate.island.radius());
 
-                if (distanceSquared > (long) influence * influence) {
-                    continue;
-                }
+                if (distanceSquared > (long) influence * influence) continue;
 
                 if (best == null || distanceSquared < best.distanceSquared) {
                     best = new Candidate(candidate.island, distanceSquared);
@@ -131,27 +133,52 @@ public final class IslandLayout {
     }
 
     /**
-     * Возвращает сгенерированный остров только для указанной ячейки.
-     * Одна ячейка имеет максимум один остров.
-     *
-     * Важное условие: решение зависит только от seed + координат ячейки,
-     * поэтому загрузка чанков в любом порядке даёт одинаковый мир.
+     * Возвращает принятый остров с учётом минимального расстояния
+     * до других детерминированных кандидатов.
      */
+    public Island getAcceptedIslandAt(long worldSeed, int x, int z) {
+        Island main = createMainIsland();
+        if (isInsideMain(main, x, z)) return main;
+
+        if (!additionalEnabled || biomeOptions.isEmpty()) return null;
+
+        int cellX = Math.floorDiv(x, cellSizeChunks * 16);
+        int cellZ = Math.floorDiv(z, cellSizeChunks * 16);
+
+        Candidate best = null;
+
+        for (int dx = -neighborCells; dx <= neighborCells; dx++) {
+            for (int dz = -neighborCells; dz <= neighborCells; dz++) {
+                Candidate candidate = generateAcceptedCandidate(
+                        worldSeed, cellX + dx, cellZ + dz
+                );
+                if (candidate == null) continue;
+
+                long distanceSquared = distanceSquared(
+                        x, z, candidate.island.x(), candidate.island.z()
+                );
+                int influence = getInfluenceRadius(candidate.island.radius());
+
+                if (distanceSquared > (long) influence * influence) continue;
+
+                if (best == null || distanceSquared < best.distanceSquared) {
+                    best = new Candidate(candidate.island, distanceSquared);
+                }
+            }
+        }
+
+        return best == null ? null : best.island;
+    }
+
     private Candidate generateCandidate(long worldSeed, int cellX, int cellZ) {
         Random random = new Random(cellSeed(worldSeed, cellX, cellZ));
 
-        if (random.nextDouble() >= spawnChance) {
-            return null;
-        }
+        if (random.nextDouble() >= spawnChance) return null;
 
         int cellSizeBlocks = cellSizeChunks * 16;
         int cellMinX = cellX * cellSizeBlocks;
         int cellMinZ = cellZ * cellSizeBlocks;
 
-        /*
-         * Точка центра должна находиться внутри ячейки, но не прямо на границе.
-         * Это не влияет на сохранность: координаты полностью детерминированы.
-         */
         int margin = Math.max(maxRadius + 4, Math.min(cellSizeBlocks / 3, 96));
 
         int centerX = cellMinX + margin + random.nextInt(
@@ -182,95 +209,36 @@ public final class IslandLayout {
             return null;
         }
 
-        /*
-         * Соседние ячейки могут быть предложены независимо.
-         * При запросе острова мы дополнительно проверяем минимальную дистанцию.
-         * Поэтому близкие кандидаты не перекрываются.
-         */
         return new Candidate(island, 0L);
-    }
-
-    /**
-     * Проверяет остров в точке с учётом минимальной дистанции до остальных
-     * детерминированных кандидатов.
-     *
-     * Если рядом есть несколько кандидатов, выбирается ближайший допустимый.
-     */
-    public Island getAcceptedIslandAt(long worldSeed, int x, int z) {
-        Island main = createMainIsland();
-        if (isInsideMain(main, x, z)) {
-            return main;
-        }
-
-        if (!additionalEnabled || biomeOptions.isEmpty()) {
-            return null;
-        }
-
-        int cellX = Math.floorDiv(x, cellSizeChunks * 16);
-        int cellZ = Math.floorDiv(z, cellSizeChunks * 16);
-
-        Candidate best = null;
-
-        for (int dx = -neighborCells; dx <= neighborCells; dx++) {
-            for (int dz = -neighborCells; dz <= neighborCells; dz++) {
-                int checkX = cellX + dx;
-                int checkZ = cellZ + dz;
-
-                Candidate candidate = generateAcceptedCandidate(worldSeed, checkX, checkZ);
-                if (candidate == null) continue;
-
-                long distanceSquared = distanceSquared(
-                        x, z,
-                        candidate.island.x(), candidate.island.z()
-                );
-
-                int influence = getInfluenceRadius(candidate.island.radius());
-                if (distanceSquared > (long) influence * influence) continue;
-
-                if (best == null || distanceSquared < best.distanceSquared) {
-                    best = new Candidate(candidate.island, distanceSquared);
-                }
-            }
-        }
-
-        return best == null ? null : best.island;
     }
 
     private Candidate generateAcceptedCandidate(long worldSeed, int cellX, int cellZ) {
         Candidate candidate = generateCandidate(worldSeed, cellX, cellZ);
         if (candidate == null) return null;
 
-        int cellSizeBlocks = cellSizeChunks * 16;
-
         for (int dx = -neighborCells; dx <= neighborCells; dx++) {
             for (int dz = -neighborCells; dz <= neighborCells; dz++) {
                 if (dx == 0 && dz == 0) continue;
 
-                Candidate other = generateCandidate(worldSeed, cellX + dx, cellZ + dz);
+                Candidate other = generateCandidate(
+                        worldSeed, cellX + dx, cellZ + dz
+                );
                 if (other == null) continue;
 
-                /*
-                 * Только кандидат с меньшим стабильным идентификатором занимает
-                 * конфликтующую область. При равенстве побеждает меньший cellKey.
-                 * Это делает результат независимым от порядка ChunkLoadEvent.
-                 */
                 long distance = distanceSquared(
                         candidate.island.x(), candidate.island.z(),
                         other.island.x(), other.island.z()
                 );
-                long min = (long) candidate.island.radius()
+
+                long required = (long) candidate.island.radius()
                         + other.island.radius()
                         + minDistance;
 
-                if (distance < min * min) {
+                if (distance < required * required) {
                     long mine = cellKey(cellX, cellZ);
                     long theirs = cellKey(cellX + dx, cellZ + dz);
-                    if (mine > theirs) {
-                        return null;
-                    }
-                    if (mine == theirs && cellSizeBlocks < 0) {
-                        return null;
-                    }
+
+                    if (mine > theirs) return null;
                 }
             }
         }
@@ -279,8 +247,9 @@ public final class IslandLayout {
     }
 
     private boolean isInsideMain(Island island, int x, int z) {
+        int influence = getInfluenceRadius(island.radius());
         return distanceSquared(x, z, island.x(), island.z())
-                <= (long) getInfluenceRadius(island.radius()) * getInfluenceRadius(island.radius());
+                <= (long) influence * influence;
     }
 
     private int getInfluenceRadius(int radius) {
@@ -296,8 +265,13 @@ public final class IslandLayout {
                 mainVariation,
                 true,
                 "main",
-                Biome.PLAINS
+                resolveBiome("minecraft:" + configBiomeName())
         );
+    }
+
+    private String configBiomeName() {
+        // Главный остров остаётся PLAINS, как и раньше.
+        return "plains";
     }
 
     private List<BiomeOption> loadBiomeOptions(FileConfiguration config) {
@@ -305,40 +279,87 @@ public final class IslandLayout {
         List<String> configured = config.getStringList("additional-islands.biomes");
 
         for (String raw : configured) {
-            try {
-                Biome biome = Biome.valueOf(raw.trim().toUpperCase());
-                result.add(new BiomeOption(biome, floraForBiome(biome)));
-            } catch (IllegalArgumentException ignored) {
-                // Неверный биом просто пропускается.
-            }
+            String key = normalizeBiomeKey(raw);
+            Biome biome = resolveBiome(key);
+            if (biome == null) continue;
+
+            result.add(new BiomeOption(biome, floraForBiome(key)));
         }
 
         if (result.isEmpty()) {
-            result.add(new BiomeOption(Biome.FOREST, "forest"));
-            result.add(new BiomeOption(Biome.BIRCH_FOREST, "birch"));
-            result.add(new BiomeOption(Biome.TAIGA, "taiga"));
-            result.add(new BiomeOption(Biome.JUNGLE, "jungle"));
-            result.add(new BiomeOption(Biome.SAVANNA, "savanna"));
-            result.add(new BiomeOption(Biome.DARK_FOREST, "dark_forest"));
-            result.add(new BiomeOption(Biome.SWAMP, "swamp"));
-            result.add(new BiomeOption(Biome.FLOWER_FOREST, "flower"));
+            String[] fallback = {
+                    "minecraft:plains",
+                    "minecraft:forest",
+                    "minecraft:birch_forest",
+                    "minecraft:old_growth_birch_forest",
+                    "minecraft:flower_forest",
+                    "minecraft:dappled_forest",
+                    "minecraft:cherry_grove",
+                    "minecraft:taiga",
+                    "minecraft:old_growth_pine_taiga",
+                    "minecraft:old_growth_spruce_taiga",
+                    "minecraft:snowy_taiga",
+                    "minecraft:jungle",
+                    "minecraft:sparse_jungle",
+                    "minecraft:bamboo_jungle",
+                    "minecraft:savanna",
+                    "minecraft:windswept_savanna",
+                    "minecraft:swamp",
+                    "minecraft:meadow",
+                    "minecraft:dark_forest",
+                    "minecraft:pale_garden",
+                    "minecraft:windswept_forest",
+                    "minecraft:wooded_badlands",
+                    "minecraft:badlands"
+            };
+
+            for (String key : fallback) {
+                Biome biome = resolveBiome(key);
+                if (biome != null) {
+                    result.add(new BiomeOption(biome, floraForBiome(key)));
+                }
+            }
         }
 
         return List.copyOf(result);
     }
 
-    private String floraForBiome(Biome biome) {
-        String name = biome.name();
+    private Biome resolveBiome(String rawKey) {
+        String key = normalizeBiomeKey(rawKey);
+        NamespacedKey namespacedKey = NamespacedKey.fromString(key);
+        if (namespacedKey == null) return null;
 
-        if (name.contains("BIRCH")) return "birch";
-        if (name.contains("TAIGA")) return "taiga";
-        if (name.contains("JUNGLE")) return "jungle";
-        if (name.contains("SAVANNA")) return "savanna";
-        if (name.contains("DARK_FOREST")) return "dark_forest";
-        if (name.contains("SWAMP")) return "swamp";
-        if (name.contains("FLOWER")) return "flower";
-        if (name.contains("PLAINS")) return "main";
+        try {
+            Registry<Biome> registry =
+                    RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME);
+            return registry.get(namespacedKey);
+        } catch (IllegalArgumentException | IllegalStateException ignored) {
+            return null;
+        }
+    }
 
+    private String normalizeBiomeKey(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) return "";
+        return value.contains(":") ? value : "minecraft:" + value;
+    }
+
+    private String floraForBiome(String key) {
+        String name = key.substring(key.indexOf(':') + 1);
+
+        if (name.contains("dappled_forest")) return "dappled_forest";
+        if (name.contains("pale_garden")) return "pale_garden";
+        if (name.contains("cherry_grove")) return "cherry";
+        if (name.contains("birch")) return "birch";
+        if (name.contains("taiga")) return "taiga";
+        if (name.contains("jungle")) return "jungle";
+        if (name.contains("savanna")) return "savanna";
+        if (name.contains("dark_forest")) return "dark_forest";
+        if (name.contains("swamp")) return "swamp";
+        if (name.contains("flower_forest")) return "flower";
+        if (name.contains("meadow")) return "meadow";
+        if (name.contains("badlands")) return "savanna";
+        if (name.contains("plains")) return "main";
         return "forest";
     }
 
