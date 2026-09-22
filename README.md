@@ -19,3 +19,8 @@ Improved version of the original WaterWorld generator.
 ## Important
 
 The repository integration currently returns HTTP 403 for write operations, so these changes were packaged as source files instead of being pushed directly to GitHub.
+
+
+## CI
+
+Ветка `feature/autonomous-islands` собирается GitHub Actions на Java 26.
