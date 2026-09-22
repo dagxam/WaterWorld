@@ -61,8 +61,8 @@ public final class IslandLayout {
         mainRadius = Math.max(16, config.getInt("island.radius", 100));
         mainHeight = Math.max(2, config.getInt("island.height", 9));
         mainVariation = Math.max(0.0D, config.getDouble("island.variation", 1.2D));
-        mainBiome = resolveBiome(config.getString("island.biome", "minecraft:plains"), "minecraft:plains");
-        oceanBiome = resolveBiome("minecraft:warm_ocean", "minecraft:warm_ocean");
+        mainBiome = resolveBiomeOrThrow(config.getString("island.biome", "minecraft:plains"), "minecraft:plains");
+        oceanBiome = resolveBiomeOrThrow("minecraft:warm_ocean", "minecraft:warm_ocean");
 
         additionalEnabled = config.getBoolean("additional-islands.enabled", true);
         cellSizeChunks = Math.max(4, config.getInt("additional-islands.cell-size-chunks", 16));
@@ -325,6 +325,18 @@ public final class IslandLayout {
         }
 
         return List.copyOf(result);
+    }
+
+    private Biome resolveBiomeOrThrow(String rawKey, String fallbackKey) {
+        Biome biome = resolveBiome(rawKey);
+        if (biome != null) return biome;
+
+        biome = resolveBiome(fallbackKey);
+        if (biome != null) return biome;
+
+        throw new IllegalStateException(
+                "WaterWorld: биом не найден в RegistryKey.BIOME: " + rawKey
+        );
     }
 
     private Biome resolveBiome(String rawKey) {
