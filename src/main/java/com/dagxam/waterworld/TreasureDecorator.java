@@ -53,27 +53,18 @@ public final class TreasureDecorator {
      * этого чанка.
      */
     public void decorate(World world, int chunkX, int chunkZ) {
-        for (IslandLayout.Island island : layout.get(world.getSeed())) {
-            if (!isNearIslandChunk(chunkX, chunkZ, island)) continue;
+        IslandLayout.Island island = layout.getAcceptedIslandForChunk(
+                world.getSeed(), chunkX, chunkZ
+        );
+        if (island == null) return;
 
-            List<TreasureSite> sites = createSites(world, island);
-            if (sites.isEmpty()) continue;
+        List<TreasureSite> sites = createSites(world, island);
+        if (sites.isEmpty()) return;
 
-            for (TreasureSite site : sites) {
-                if (Math.floorDiv(site.x, 16) != chunkX || Math.floorDiv(site.z, 16) != chunkZ) continue;
-                placeTreasureChest(world, site, island, sites);
-            }
+        for (TreasureSite site : sites) {
+            if (Math.floorDiv(site.x, 16) != chunkX || Math.floorDiv(site.z, 16) != chunkZ) continue;
+            placeTreasureChest(world, site, island, sites);
         }
-    }
-
-    private boolean isNearIslandChunk(int chunkX, int chunkZ, IslandLayout.Island island) {
-        int minX = chunkX * 16 - 8;
-        int minZ = chunkZ * 16 - 8;
-        int maxX = chunkX * 16 + 23;
-        int maxZ = chunkZ * 16 + 23;
-        int radius = island.radius() + 4;
-        return island.x() >= minX - radius && island.x() <= maxX + radius
-                && island.z() >= minZ - radius && island.z() <= maxZ + radius;
     }
 
     /** От 3 до 7 хорошо разнесённых точек на суше острова. */
