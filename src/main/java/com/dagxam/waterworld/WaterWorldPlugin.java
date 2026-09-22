@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "9";
+    private static final String LAYOUT_VERSION = "10";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
@@ -57,7 +57,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         if (restartRequired) {
-            getLogger().warning("WaterWorld v9 обнаружил мир со старой генерацией.");
+            getLogger().warning("WaterWorld v10 обнаружил мир со старой генерацией.");
             getLogger().warning("Старые чанки сохранены в резервной копии.");
             getLogger().warning("Сервер остановится сейчас. Запустите его ещё раз для чистой генерации.");
             Bukkit.shutdown();
@@ -129,7 +129,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         setIslandSpawn(world);
         if (mobDecorator != null) mobDecorator.initializeWorld(world);
         startCustomTimeCycle(world);
-        getLogger().info("WaterWorld v9 успешно запущен. Основной мир: " + world.getName());
+        getLogger().info("WaterWorld v10 успешно запущен. Основной мир: " + world.getName());
     }
 
     private String readLevelName() {
@@ -206,7 +206,9 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         Path marker = new File(new File(serverRoot(), worldName), LAYOUT_MARKER).toPath();
         try {
             Files.writeString(marker, LAYOUT_VERSION + System.lineSeparator(), StandardCharsets.UTF_8);
-        } catch (IOException e) { getLogger().warning("Не удалось записать маркер версии генерации: " + e.getMessage()); }
+        } catch (IOException e) {
+            getLogger().warning("Не удалось записать маркер версии генерации: " + e.getMessage());
+        }
     }
 
     private boolean backupExistingWorld() {
@@ -259,9 +261,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             for (Path path : (Iterable<Path>) paths::iterator) {
                 Path relative = source.relativize(path);
                 Path destination = target.resolve(relative);
-                if (Files.isDirectory(path)) {
-                    Files.createDirectories(destination);
-                } else {
+                if (Files.isDirectory(path)) Files.createDirectories(destination);
+                else {
                     Files.createDirectories(destination.getParent());
                     Files.copy(path, destination, StandardCopyOption.COPY_ATTRIBUTES);
                 }
@@ -272,11 +273,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private void deleteDirectory(Path directory) throws IOException {
         try (Stream<Path> paths = Files.walk(directory)) {
             paths.sorted(Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.delete(path);
-                } catch (IOException e) {
-                    throw new BackupDeleteException(e);
-                }
+                try { Files.delete(path); }
+                catch (IOException e) { throw new BackupDeleteException(e); }
             });
         } catch (BackupDeleteException e) {
             throw e.cause;
@@ -285,9 +283,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
     private void deleteDirectoryQuietly(Path directory) {
         if (!Files.exists(directory)) return;
-        try {
-            deleteDirectory(directory);
-        } catch (IOException e) {
+        try { deleteDirectory(directory); }
+        catch (IOException e) {
             getLogger().warning("Не удалось удалить неполный backup: " + directory.getFileName() + ": " + e.getMessage());
         }
     }
@@ -320,7 +317,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
             for (int dz = -radius; dz <= radius; dz++) {
                 int x = cx + dx, z = cz + dz, y = world.getHighestBlockYAt(x, z);
                 if (world.getBlockAt(x, y, z).getType() == Material.GRASS_BLOCK
-                        && world.getBlockAt(x, y + 1, z).isEmpty() && world.getBlockAt(x, y + 2, z).isEmpty()) {
+                        && world.getBlockAt(x, y + 1, z).isEmpty()
+                        && world.getBlockAt(x, y + 2, z).isEmpty()) {
                     world.setSpawnLocation(x, y + 1, z);
                     return;
                 }
@@ -334,7 +332,8 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
         int night = getConfig().getInt("time-cycle.night-duration-seconds", 600);
         if (day <= 0 || night <= 0) return;
         long interval = Math.max(1L, getConfig().getLong("time-cycle.update-interval-ticks", 1L));
-        double daySpeed = 12000.0D / (day * 20.0D), nightSpeed = 12000.0D / (night * 20.0D);
+        double daySpeed = 12000.0D / (day * 20.0D);
+        double nightSpeed = 12000.0D / (night * 20.0D);
         final double[] remainder = {0.0D};
         world.setGameRuleValue("doDaylightCycle", "false");
         timeCycleTask = getServer().getScheduler().runTaskTimer(this, () -> {
