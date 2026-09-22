@@ -84,16 +84,35 @@ additional-islands:
   neighbor-cells: 3
 
   # Каждый остров получает собственный биом.
+  # Можно указывать обычное имя (FOREST) или namespaced key
+  # (minecraft:forest). Для Paper 26.3 биомы читаются через registry.
+  #
+  # Включены наземные биомы, подходящие для автономных островов,
+  # включая новый Dappled Forest из Minecraft 26.3.
   biomes:
-    - PLAINS
-    - FOREST
-    - BIRCH_FOREST
-    - TAIGA
-    - JUNGLE
-    - SAVANNA
-    - DARK_FOREST
-    - SWAMP
-    - FLOWER_FOREST
+    - minecraft:plains
+    - minecraft:forest
+    - minecraft:birch_forest
+    - minecraft:old_growth_birch_forest
+    - minecraft:flower_forest
+    - minecraft:dappled_forest
+    - minecraft:cherry_grove
+    - minecraft:taiga
+    - minecraft:old_growth_pine_taiga
+    - minecraft:old_growth_spruce_taiga
+    - minecraft:snowy_taiga
+    - minecraft:jungle
+    - minecraft:sparse_jungle
+    - minecraft:bamboo_jungle
+    - minecraft:savanna
+    - minecraft:windswept_savanna
+    - minecraft:swamp
+    - minecraft:meadow
+    - minecraft:dark_forest
+    - minecraft:pale_garden
+    - minecraft:windswept_forest
+    - minecraft:wooded_badlands
+    - minecraft:badlands
 
 vegetation:
   enabled: true
