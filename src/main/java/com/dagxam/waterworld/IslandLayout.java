@@ -20,7 +20,7 @@ import java.util.Random;
  * после перезапуска сервера.
  *
  * Биомы разрешаются через data-driven registry Paper 26.3, а не через
- * устаревшие Biome.valueOf()/Biome.values().
+ * устаревшие enum-методы Biome.
  */
 public final class IslandLayout {
     public record Island(
