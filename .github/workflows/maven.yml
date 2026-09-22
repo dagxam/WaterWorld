@@ -2,7 +2,7 @@ name: Сборка и Релиз Maven
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "feature/autonomous-islands" ]
     tags:
       - 'v*'
   pull_request:
