@@ -4,7 +4,6 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.List;
 import java.util.Random;
 
 /** Разная естественная флора для главного и малых островов. */
@@ -27,7 +26,11 @@ public final class NaturalIslandDecorator {
     }
 
     public void decorate(World world, int chunkX, int chunkZ) {
-        List<IslandLayout.Island> islands = layout.get(world.getSeed());
+        IslandLayout.Island island = layout.getAcceptedIslandForChunk(
+                world.getSeed(), chunkX, chunkZ
+        );
+        if (island == null) return;
+
         Random random = new Random(world.getSeed()
                 ^ ((long) chunkX * 341873128712L)
                 ^ ((long) chunkZ * 132897987541L)
@@ -36,9 +39,6 @@ public final class NaturalIslandDecorator {
         for (int i = 0; i < 24; i++) {
             int x = chunkX * 16 + 1 + random.nextInt(14);
             int z = chunkZ * 16 + 1 + random.nextInt(14);
-            IslandLayout.Island island = islandAt(islands, x, z);
-            if (island == null) continue;
-
             int margin = island.main() ? 8 : Math.max(4, island.radius() / 5);
             double dx = x - island.x();
             double dz = z - island.z();
@@ -49,15 +49,6 @@ public final class NaturalIslandDecorator {
             if (y <= seaLevel || world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
             placeFlora(world, x, y + 1, z, island.flora(), random);
         }
-    }
-
-    private IslandLayout.Island islandAt(List<IslandLayout.Island> islands, int x, int z) {
-        for (IslandLayout.Island island : islands) {
-            double dx = x - island.x();
-            double dz = z - island.z();
-            if (dx * dx + dz * dz <= (double) island.radius() * island.radius()) return island;
-        }
-        return null;
     }
 
     private void placeFlora(World world, int x, int y, int z, String flora, Random random) {
