@@ -39,6 +39,8 @@ public final class IslandLayout {
     private final int mainRadius;
     private final int mainHeight;
     private final double mainVariation;
+    private final Biome mainBiome;
+    private final Biome oceanBiome;
 
     private final boolean additionalEnabled;
     private final int cellSizeChunks;
@@ -59,6 +61,8 @@ public final class IslandLayout {
         mainRadius = Math.max(16, config.getInt("island.radius", 100));
         mainHeight = Math.max(2, config.getInt("island.height", 9));
         mainVariation = Math.max(0.0D, config.getDouble("island.variation", 1.2D));
+        mainBiome = resolveBiome(config.getString("island.biome", "minecraft:plains"), "minecraft:plains");
+        oceanBiome = resolveBiome("minecraft:warm_ocean", "minecraft:warm_ocean");
 
         additionalEnabled = config.getBoolean("additional-islands.enabled", true);
         cellSizeChunks = Math.max(4, config.getInt("additional-islands.cell-size-chunks", 16));
@@ -89,6 +93,10 @@ public final class IslandLayout {
      * Возвращает биомы, которые реально могут быть назначены малым островам.
      * Используется BiomeProvider для корректного списка возможных биомов.
      */
+    public Biome getOceanBiome() {
+        return oceanBiome;
+    }
+
     public List<Biome> getConfiguredBiomes() {
         List<Biome> result = new ArrayList<>(biomeOptions.size() + 1);
         result.add(createMainIsland().biome());
@@ -265,13 +273,8 @@ public final class IslandLayout {
                 mainVariation,
                 true,
                 "main",
-                resolveBiome("minecraft:" + configBiomeName())
+                mainBiome
         );
-    }
-
-    private String configBiomeName() {
-        // Главный остров остаётся PLAINS, как и раньше.
-        return "plains";
     }
 
     private List<BiomeOption> loadBiomeOptions(FileConfiguration config) {
