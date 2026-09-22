@@ -54,6 +54,49 @@ public final class NaturalIslandDecorator {
     private void placeFlora(World world, int x, int y, int z, String flora, Random random) {
         if (!world.getBlockAt(x, y, z).isEmpty()) return;
         switch (flora) {
+            case "dappled_forest" -> {
+                if (random.nextInt(100) < 38) {
+                    Material[] poplarLeaves = {
+                            Material.RED_POPLAR_LEAVES,
+                            Material.ORANGE_POPLAR_LEAVES,
+                            Material.YELLOW_POPLAR_LEAVES
+                    };
+                    placeTree(world, x, y, z, random, Material.POPLAR_LOG,
+                            poplarLeaves[random.nextInt(poplarLeaves.length)], 5, 8);
+                } else if (random.nextInt(100) < 45) {
+                    placeGrass(world, x, y, z, Material.RED_SHRUB);
+                } else if (random.nextInt(100) < 25) {
+                    placeGrass(world, x, y, z, Material.SHELF_MUSHROOM);
+                } else {
+                    placeGrass(world, x, y, z, Material.SHORT_GRASS);
+                }
+            }
+            case "cherry" -> {
+                if (random.nextInt(100) < 32) {
+                    placeTree(world, x, y, z, random, Material.CHERRY_LOG, Material.CHERRY_LEAVES, 5, 8);
+                } else {
+                    placeGrass(world, x, y, z, Material.PINK_PETALS);
+                }
+            }
+            case "pale_garden" -> {
+                if (random.nextInt(100) < 28) {
+                    placeTree(world, x, y, z, random, Material.PALE_OAK_LOG, Material.PALE_OAK_LEAVES, 5, 8);
+                } else {
+                    placeGrass(world, x, y, z, Material.PALE_MOSS_CARPET);
+                }
+            }
+            case "meadow" -> {
+                Material[] flowers = {
+                        Material.POPPY, Material.DANDELION, Material.ALLIUM,
+                        Material.AZURE_BLUET, Material.OXEYE_DAISY,
+                        Material.CORNFLOWER, Material.PINK_TULIP
+                };
+                if (random.nextInt(100) < 82) {
+                    placeGrass(world, x, y, z, flowers[random.nextInt(flowers.length)]);
+                } else {
+                    placeGrass(world, x, y, z, Material.SHORT_GRASS);
+                }
+            }
             case "jungle" -> {
                 if (random.nextInt(100) < 28) placeTree(world, x, y, z, random, Material.JUNGLE_LOG, Material.JUNGLE_LEAVES, 7, 10);
                 else if (random.nextInt(100) < 55) placeFlower(world, x, y, z, random, Material.LILY_PAD, Material.FERN, Material.LARGE_FERN);
