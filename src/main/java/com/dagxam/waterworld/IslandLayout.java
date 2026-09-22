@@ -178,6 +178,74 @@ public final class IslandLayout {
         return best == null ? null : best.island;
     }
 
+    /**
+     * Находит остров, пересекающий указанный чанк.
+     * Используется декораторами, чтобы не перебирать весь мир и не
+     * зависеть от старого фиксированного списка островов.
+     */
+    public Island getAcceptedIslandForChunk(long worldSeed, int chunkX, int chunkZ) {
+        int minX = chunkX * 16;
+        int minZ = chunkZ * 16;
+        int maxX = minX + 15;
+        int maxZ = minZ + 15;
+
+        Island main = createMainIsland();
+        if (circleIntersectsRectangle(main.x(), main.z(), getInfluenceRadius(main.radius()),
+                minX, minZ, maxX, maxZ)) {
+            return main;
+        }
+
+        if (!additionalEnabled || biomeOptions.isEmpty()) return null;
+
+        int centerX = minX + 8;
+        int centerZ = minZ + 8;
+        int cellX = Math.floorDiv(centerX, cellSizeChunks * 16);
+        int cellZ = Math.floorDiv(centerZ, cellSizeChunks * 16);
+
+        Island best = null;
+        long bestDistance = Long.MAX_VALUE;
+
+        for (int dx = -neighborCells; dx <= neighborCells; dx++) {
+            for (int dz = -neighborCells; dz <= neighborCells; dz++) {
+                Candidate candidate = generateAcceptedCandidate(
+                        worldSeed, cellX + dx, cellZ + dz
+                );
+                if (candidate == null) continue;
+
+                Island island = candidate.island();
+                int influence = getInfluenceRadius(island.radius());
+
+                if (!circleIntersectsRectangle(
+                        island.x(), island.z(), influence,
+                        minX, minZ, maxX, maxZ
+                )) {
+                    continue;
+                }
+
+                long distance = distanceSquared(
+                        centerX, centerZ, island.x(), island.z()
+                );
+                if (best == null || distance < bestDistance) {
+                    best = island;
+                    bestDistance = distance;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private static boolean circleIntersectsRectangle(
+            int centerX, int centerZ, int radius,
+            int minX, int minZ, int maxX, int maxZ
+    ) {
+        int nearestX = Math.max(minX, Math.min(centerX, maxX));
+        int nearestZ = Math.max(minZ, Math.min(centerZ, maxZ));
+        long dx = (long) centerX - nearestX;
+        long dz = (long) centerZ - nearestZ;
+        return dx * dx + dz * dz <= (long) radius * radius;
+    }
+
     private Candidate generateCandidate(long worldSeed, int cellX, int cellZ) {
         Random random = new Random(cellSeed(worldSeed, cellX, cellZ));
 
