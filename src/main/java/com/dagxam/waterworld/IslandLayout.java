@@ -65,8 +65,8 @@ public final class IslandLayout {
         oceanBiome = resolveBiomeOrThrow("minecraft:warm_ocean", "minecraft:warm_ocean");
 
         additionalEnabled = config.getBoolean("additional-islands.enabled", true);
-        cellSizeChunks = Math.max(4, config.getInt("additional-islands.cell-size-chunks", 16));
-        spawnChance = clamp(config.getDouble("additional-islands.spawn-chance", 0.12D), 0.0D, 1.0D);
+        cellSizeChunks = Math.max(8, config.getInt("additional-islands.cell-size-chunks", 48));
+        spawnChance = clamp(config.getDouble("additional-islands.spawn-chance", 1.0D), 0.0D, 1.0D);
         minDistance = Math.max(
                 mainRadius + 64,
                 config.getInt("additional-islands.min-distance", 700)
@@ -255,14 +255,33 @@ public final class IslandLayout {
         int cellMinX = cellX * cellSizeBlocks;
         int cellMinZ = cellZ * cellSizeBlocks;
 
-        int margin = Math.max(maxRadius + 4, Math.min(cellSizeBlocks / 3, 96));
+        /*
+         * Острова должны быть достаточно частыми, но не должны слипаться.
+         * Старый вариант разрешал центру находиться почти у границы
+         * ячейки. При minDistance 700 и ячейке 256 блоков почти каждый
+         * кандидат конфликтовал с несколькими соседями, поэтому после
+         * проверки расстояния реально принятых островов почти не было.
+         *
+         * Теперь остров располагается около центра своей ячейки.
+         * Максимальный разброс вычисляется так, чтобы соседние ячейки
+         * сохраняли minDistance + два максимальных радиуса между центрами.
+         */
+        int requiredCenterDistance = minDistance + maxRadius * 2;
+        int maxJitter = Math.max(
+                0,
+                (cellSizeBlocks - requiredCenterDistance) / 2
+        );
 
-        int centerX = cellMinX + margin + random.nextInt(
-                Math.max(1, cellSizeBlocks - margin * 2)
-        );
-        int centerZ = cellMinZ + margin + random.nextInt(
-                Math.max(1, cellSizeBlocks - margin * 2)
-        );
+        int centerBaseX = cellMinX + cellSizeBlocks / 2;
+        int centerBaseZ = cellMinZ + cellSizeBlocks / 2;
+
+        int centerX = centerBaseX;
+        int centerZ = centerBaseZ;
+
+        if (maxJitter > 0) {
+            centerX += random.nextInt(maxJitter * 2 + 1) - maxJitter;
+            centerZ += random.nextInt(maxJitter * 2 + 1) - maxJitter;
+        }
 
         int radius = minRadius + random.nextInt(maxRadius - minRadius + 1);
         int height = minHeight + random.nextInt(maxHeight - minHeight + 1);
