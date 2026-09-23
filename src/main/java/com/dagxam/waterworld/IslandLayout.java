@@ -64,11 +64,13 @@ public final class IslandLayout {
 
         enabled = config.getBoolean("additional-islands.enabled", true);
         chancePercent = clampPercent(config.getInt("additional-islands.chance-percent", 100));
-        minDistance = Math.max(mainRadius + 80,
-                config.getInt("additional-islands.min-distance", 500));
-
         int configuredCellSize = Math.max(256,
-                config.getInt("additional-islands.cell-size", 650));
+                config.getInt("additional-islands.cell-size", 450));
+        int configuredMinDistance = config.getInt("additional-islands.min-distance", 350);
+        minDistance = Math.max(
+                mainRadius + 80,
+                Math.min(configuredMinDistance, configuredCellSize - 32)
+        );
         minRadius = Math.max(8,
                 config.getInt("additional-islands.radius-min", 15));
         maxRadius = Math.max(minRadius,
@@ -93,14 +95,19 @@ public final class IslandLayout {
          * Это позволяет держать острова достаточно разнесёнными,
          * но при этом сделать их заметно плотнее.
          */
-        int configuredJitter = Math.min(64, Math.max(1, minDistance / 8));
-        jitter = Math.min(configuredJitter, Math.max(1, configuredCellSize / 10));
+        int configuredJitter = Math.min(32, Math.max(1, minDistance / 8));
+        jitter = Math.min(configuredJitter, Math.max(1, configuredCellSize / 12));
 
-        long safeCellSize = Math.max(
-                configuredCellSize,
-                (long) minDistance + (long) jitter * 2L + 16L
-        );
-        cellSize = (int) Math.min(Integer.MAX_VALUE - 1024L, safeCellSize);
+        /*
+         * cell-size теперь является реальным базовым шагом сетки.
+         * Он больше не увеличивается автоматически, иначе настройка
+         * "450 блоков" снова превращалась бы в ~600+.
+         *
+         * При шаге 450 и текущем минимальном расстоянии центры
+         * соседних островов остаются достаточно разнесены за счёт
+         * ограниченного jitter.
+         */
+        cellSize = configuredCellSize;
     }
 
     /** Главный остров остаётся единственным фиксированным островом в центре. */
