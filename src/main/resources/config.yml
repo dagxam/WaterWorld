@@ -49,15 +49,15 @@ island:
 additional-islands:
   enabled: true
   # Шанс появления острова в одной пространственной ячейке.
-  chance-percent: 72
+  chance-percent: 100
   # Средний шаг сетки между возможными островами.
   # Система автоматически увеличит его при необходимости,
   # чтобы острова не подходили друг к другу ближе min-distance.
-  cell-size: 1100
+  cell-size: 650
   # Минимальная дистанция между центрами малых островов.
   min-distance: 500
-  radius-min: 15
-  radius-max: 24
+  radius-min: 18
+  radius-max: 30
   height-min: 3
   height-max: 5
   variation: 0.7
