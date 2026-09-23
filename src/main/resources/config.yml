@@ -55,7 +55,7 @@ additional-islands:
   # чтобы острова не подходили друг к другу ближе min-distance.
   cell-size: 650
   # Минимальная дистанция между центрами малых островов.
-  min-distance: 500
+  min-distance: 350
   radius-min: 18
   radius-max: 30
   height-min: 3
