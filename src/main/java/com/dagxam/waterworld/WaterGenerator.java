@@ -11,7 +11,7 @@ import org.bukkit.util.noise.SimplexOctaveGenerator;
 import java.util.List;
 import java.util.Random;
 
-/** Генерирует океан, один центральный зелёный остров и малые зелёные острова. */
+/** Генерирует океан, один центральный зелёный остров и автономные малые острова. */
 public final class WaterGenerator extends ChunkGenerator {
     private final int seaLevel, oceanBaseHeight, oceanHeightAmplitude;
     private final double terrainScale;
@@ -48,7 +48,7 @@ public final class WaterGenerator extends ChunkGenerator {
     @Override
     public void generateNoise(WorldInfo info, Random random, int chunkX, int chunkZ, ChunkData data) {
         ensureGenerators(info.getSeed());
-        List<IslandLayout.Island> islands = layout.get(info.getSeed());
+        List<IslandLayout.Island> islands = layout.getForChunk(info.getSeed(), chunkX, chunkZ);
         int minHeight = info.getMinHeight();
         int maxHeight = info.getMaxHeight() - 1;
 
@@ -71,7 +71,7 @@ public final class WaterGenerator extends ChunkGenerator {
                     if (isBottomBedrock(info.getSeed(), x, y, z, minHeight)) {
                         data.setBlock(lx, y, lz, Material.BEDROCK);
                     } else if (islandColumn) {
-                        setIslandTerrain(data, lx, lz, y, surface);
+                        setIslandTerrain(data, lx, lz, y, surface, island);
                     } else {
                         setOceanTerrain(data, lx, lz, y, floor);
                     }
@@ -79,10 +79,7 @@ public final class WaterGenerator extends ChunkGenerator {
             }
         }
 
-        // Водный мир использует собственный рельеф, поэтому ванильный noise-stage
-        // не знает о наших слоях. Размещаем руды отдельным детерминированным этапом,
-        // сохраняя стандартную логику пород: обычные руды в STONE, глубокие варианты
-        // в DEEPSLATE. Распределение ограничено высотой и создаёт жилы, а не шум по блокам.
+        // Руды здесь не изменяем. Текущая логика оставлена как есть.
         generateOres(info, chunkX, chunkZ, data);
     }
 
@@ -189,17 +186,42 @@ public final class WaterGenerator extends ChunkGenerator {
         else data.setBlock(lx, y, lz, Material.SAND);
     }
 
-    private void setIslandTerrain(ChunkData data, int lx, int lz, int y, int surface) {
+    private void setIslandTerrain(ChunkData data, int lx, int lz, int y, int surface,
+                                   IslandLayout.Island island) {
         if (y > surface) {
             data.setBlock(lx, y, lz, y <= seaLevel ? Material.WATER : Material.AIR);
             return;
         }
-        if (y < 0) { data.setBlock(lx, y, lz, Material.DEEPSLATE); return; }
-        if (surface <= seaLevel) {
-            data.setBlock(lx, y, lz, y < surface - 4 ? Material.STONE : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
+
+        String flora = island.flora();
+        if ("desert".equals(flora)) {
+            data.setBlock(lx, y, lz,
+                    y < surface - 5 ? Material.SANDSTONE : Material.SAND);
             return;
         }
-        data.setBlock(lx, y, lz, y < surface - 5 ? Material.STONE : y < surface - 1 ? Material.DIRT : Material.GRASS_BLOCK);
+
+        if ("badlands".equals(flora)) {
+            data.setBlock(lx, y, lz,
+                    y < surface - 5 ? Material.TERRACOTTA : Material.RED_TERRACOTTA);
+            return;
+        }
+
+        if ("mushroom".equals(flora)) {
+            data.setBlock(lx, y, lz,
+                    y < surface - 4 ? Material.DIRT : Material.MYCELIUM);
+            return;
+        }
+
+        if (surface <= seaLevel) {
+            data.setBlock(lx, y, lz,
+                    y < surface - 4 ? Material.STONE
+                            : y < surface - 1 ? Material.SANDSTONE : Material.SAND);
+            return;
+        }
+
+        data.setBlock(lx, y, lz,
+                y < surface - 5 ? Material.STONE
+                        : y < surface - 1 ? Material.DIRT : Material.GRASS_BLOCK);
     }
 
     private int getIslandSurface(int x, int z, IslandLayout.Island island) {
@@ -252,13 +274,14 @@ public final class WaterGenerator extends ChunkGenerator {
         return new BiomeProvider() {
             @Override
             public Biome getBiome(WorldInfo worldInfo, int x, int y, int z) {
-                for (IslandLayout.Island island : layout.get(worldInfo.getSeed())) {
-                    int influence = getSlopeRadius(island.radius());
-                    if (distanceSquared(x, z, island.x(), island.z()) <= (double) influence * influence) return Biome.PLAINS;
-                }
-                return Biome.WARM_OCEAN;
+                IslandLayout.Island island = layout.findIslandAt(worldInfo.getSeed(), x, z);
+                return island == null ? Biome.WARM_OCEAN : island.biome();
             }
-            @Override public List<Biome> getBiomes(WorldInfo worldInfo) { return List.of(Biome.WARM_OCEAN, Biome.PLAINS); }
+
+            @Override
+            public List<Biome> getBiomes(WorldInfo worldInfo) {
+                return layout.getBiomes();
+            }
         };
     }
 
