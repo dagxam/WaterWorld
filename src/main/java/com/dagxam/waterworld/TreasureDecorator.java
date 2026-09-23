@@ -53,7 +53,7 @@ public final class TreasureDecorator {
      * этого чанка.
      */
     public void decorate(World world, int chunkX, int chunkZ) {
-        for (IslandLayout.Island island : layout.get(world.getSeed())) {
+        for (IslandLayout.Island island : layout.getForChunk(world.getSeed(), chunkX, chunkZ)) {
             if (!isNearIslandChunk(chunkX, chunkZ, island)) continue;
 
             List<TreasureSite> sites = createSites(world, island);
