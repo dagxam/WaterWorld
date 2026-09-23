@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "10";
+    private static final String LAYOUT_VERSION = "11";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
