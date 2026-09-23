@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "9";
+    private static final String LAYOUT_VERSION = "10";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
@@ -49,9 +49,33 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     @Override
     public void onLoad() {
         saveDefaultConfig();
+        migrateIslandLayoutConfig();
         worldName = readLevelName();
         generator = new WaterGenerator(getConfig());
         restartRequired = registerMainWorldGenerator();
+    }
+
+    /**
+     * Старые конфигурации WaterWorld не содержали новых параметров
+     * автономной раскладки. Обновляем их один раз, чтобы существующий
+     * config.yml не оставался со старой редкой схемой.
+     */
+    private void migrateIslandLayoutConfig() {
+        int version = getConfig().getInt("additional-islands.layout-version", 0);
+        if (version >= 2) return;
+
+        getConfig().set("additional-islands.enabled", true);
+        getConfig().set("additional-islands.chance-percent", 100);
+        getConfig().set("additional-islands.cell-size", 650);
+        getConfig().set("additional-islands.min-distance", 500);
+        getConfig().set("additional-islands.radius-min", 18);
+        getConfig().set("additional-islands.radius-max", 30);
+        getConfig().set("additional-islands.height-min", 3);
+        getConfig().set("additional-islands.height-max", 5);
+        getConfig().set("additional-islands.variation", 0.7D);
+        getConfig().set("additional-islands.layout-version", 2);
+        saveConfig();
+        getLogger().info("Настройки автономных островов обновлены до схемы v2.");
     }
 
     @Override
