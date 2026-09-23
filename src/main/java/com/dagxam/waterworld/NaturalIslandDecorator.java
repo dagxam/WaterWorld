@@ -7,7 +7,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.util.List;
 import java.util.Random;
 
-/** Разная естественная флора для главного и малых островов. */
+/** Разная естественная флора для главного и автономных малых островов. */
 public final class NaturalIslandDecorator {
     private final int seaLevel;
     private final IslandLayout layout;
@@ -27,7 +27,7 @@ public final class NaturalIslandDecorator {
     }
 
     public void decorate(World world, int chunkX, int chunkZ) {
-        List<IslandLayout.Island> islands = layout.get(world.getSeed());
+        List<IslandLayout.Island> islands = layout.getForChunk(world.getSeed(), chunkX, chunkZ);
         Random random = new Random(world.getSeed()
                 ^ ((long) chunkX * 341873128712L)
                 ^ ((long) chunkZ * 132897987541L)
@@ -46,8 +46,15 @@ public final class NaturalIslandDecorator {
             if (dx * dx + dz * dz > usableRadius * usableRadius) continue;
 
             int y = world.getHighestBlockYAt(x, z);
-            if (y <= seaLevel || world.getBlockAt(x, y, z).getType() != Material.GRASS_BLOCK) continue;
-            placeFlora(world, x, y + 1, z, island.flora(), random);
+            Material surface = world.getBlockAt(x, y, z).getType();
+            if (y <= seaLevel) continue;
+
+            if ("desert".equals(island.flora()) || "badlands".equals(island.flora())
+                    || "mushroom".equals(island.flora())) {
+                placeSpecialFlora(world, x, y + 1, z, island.flora(), random);
+            } else if (surface == Material.GRASS_BLOCK) {
+                placeFlora(world, x, y + 1, z, island.flora(), random);
+            }
         }
     }
 
@@ -58,6 +65,40 @@ public final class NaturalIslandDecorator {
             if (dx * dx + dz * dz <= (double) island.radius() * island.radius()) return island;
         }
         return null;
+    }
+
+    private void placeSpecialFlora(World world, int x, int y, int z, String flora, Random random) {
+        if (!world.getBlockAt(x, y, z).isEmpty()) return;
+
+        switch (flora) {
+            case "desert" -> {
+                if (random.nextInt(100) < 26) {
+                    int height = 1 + random.nextInt(3);
+                    if (world.getBlockAt(x, y - 1, z).getType() == Material.SAND) {
+                        for (int i = 0; i < height && world.getBlockAt(x, y + i, z).isEmpty(); i++) {
+                            world.getBlockAt(x, y + i, z).setType(Material.CACTUS, false);
+                        }
+                    }
+                } else if (random.nextBoolean()) {
+                    placeGrass(world, x, y, z, Material.DEAD_BUSH);
+                }
+            }
+            case "badlands" -> {
+                if (random.nextInt(100) < 42) placeGrass(world, x, y, z, Material.DEAD_BUSH);
+                else if (random.nextInt(100) < 15
+                        && world.getBlockAt(x, y - 1, z).getType().name().endsWith("TERRACOTTA")) {
+                    placeGrass(world, x, y, z, Material.CACTUS);
+                }
+            }
+            case "mushroom" -> {
+                if (random.nextInt(100) < 28) {
+                    placeGrass(world, x, y, z,
+                            random.nextBoolean() ? Material.RED_MUSHROOM : Material.BROWN_MUSHROOM);
+                }
+            }
+            default -> {
+            }
+        }
     }
 
     private void placeFlora(World world, int x, int y, int z, String flora, Random random) {
@@ -95,9 +136,9 @@ public final class NaturalIslandDecorator {
                 if (random.nextInt(100) < 42) placeTree(world, x, y, z, random, Material.DARK_OAK_LOG, Material.DARK_OAK_LEAVES, 5, 8);
                 else placeGrass(world, x, y, z, Material.FERN);
             }
-            case "mushroom" -> {
-                if (random.nextInt(100) < 12) placeGrass(world, x, y, z, random.nextBoolean() ? Material.RED_MUSHROOM : Material.BROWN_MUSHROOM);
-                else placeGrass(world, x, y, z, Material.SHORT_GRASS);
+            case "cherry" -> {
+                if (random.nextInt(100) < 32) placeTree(world, x, y, z, random, Material.CHERRY_LOG, Material.CHERRY_LEAVES, 5, 8);
+                else placeFlower(world, x, y, z, random, Material.PINK_PETALS, Material.ALLIUM, Material.WHITE_TULIP);
             }
             default -> {
                 if (random.nextInt(100) < 18) placeTree(world, x, y, z, random, Material.OAK_LOG, Material.OAK_LEAVES, 5, 8);
