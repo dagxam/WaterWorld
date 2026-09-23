@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 /** Основной класс WaterWorld. */
 public final class WaterWorldPlugin extends JavaPlugin implements Listener {
     private static final String GENERATOR_NAME = "WaterWorld";
-    private static final String LAYOUT_VERSION = "11";
+    private static final String LAYOUT_VERSION = "12";
     private static final String LAYOUT_MARKER = ".waterworld-layout-version";
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
 
@@ -66,7 +66,7 @@ public final class WaterWorldPlugin extends JavaPlugin implements Listener {
 
         getConfig().set("additional-islands.enabled", true);
         getConfig().set("additional-islands.chance-percent", 100);
-        getConfig().set("additional-islands.cell-size", 650);
+        getConfig().set("additional-islands.cell-size", 450);
         getConfig().set("additional-islands.min-distance", 500);
         getConfig().set("additional-islands.radius-min", 18);
         getConfig().set("additional-islands.radius-max", 30);
