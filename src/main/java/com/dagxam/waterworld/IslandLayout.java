@@ -1,23 +1,59 @@
 package com.dagxam.waterworld;
 
+import org.bukkit.block.Biome;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Random;
 
-/** Фиксированный главный остров и 10–20 случайных малых островов. */
+/**
+ * Автономная детерминированная раскладка островов.
+ *
+ * Малые острова НЕ собираются заранее в один большой список.
+ * Для каждого загружаемого чанка вычисляются только ближайшие ячейки
+ * пространственной сетки. Благодаря этому мир может содержать острова
+ * на практически неограниченной дальности.
+ *
+ * Позиция острова определяется только seed + координатами ячейки.
+ * Поэтому после перезапуска/выгрузки чанка остров не "переезжает".
+ */
 public final class IslandLayout {
-    public record Island(int x, int z, int radius, int height, double variation, boolean main, String flora) {}
+    public record Island(int x, int z, int radius, int height,
+                         double variation, boolean main, String flora, Biome biome) {}
 
-    private final int mainX, mainZ, mainRadius, mainHeight;
+    private record BiomeDefinition(Biome biome, String flora) {}
+
+    private static final BiomeDefinition[] SMALL_BIOMES = {
+            new BiomeDefinition(Biome.DESERT, "desert"),
+            new BiomeDefinition(Biome.FOREST, "forest"),
+            new BiomeDefinition(Biome.BIRCH_FOREST, "birch"),
+            new BiomeDefinition(Biome.TAIGA, "taiga"),
+            new BiomeDefinition(Biome.SAVANNA, "savanna"),
+            new BiomeDefinition(Biome.JUNGLE, "jungle"),
+            new BiomeDefinition(Biome.FLOWER_FOREST, "flower"),
+            new BiomeDefinition(Biome.SWAMP, "swamp"),
+            new BiomeDefinition(Biome.DARK_FOREST, "dark_forest"),
+            new BiomeDefinition(Biome.MUSHROOM_FIELDS, "mushroom"),
+            new BiomeDefinition(Biome.CHERRY_GROVE, "cherry"),
+            new BiomeDefinition(Biome.BADLANDS, "badlands")
+    };
+
+    private final int mainX;
+    private final int mainZ;
+    private final int mainRadius;
+    private final int mainHeight;
     private final double mainVariation;
-    private final int minCount, maxCount, minDistance, maxDistance;
-    private final int minRadius, maxRadius, minHeight, maxHeight;
+
+    private final boolean enabled;
+    private final int chancePercent;
+    private final int minDistance;
+    private final int cellSize;
+    private final int jitter;
+    private final int minRadius;
+    private final int maxRadius;
+    private final int minHeight;
+    private final int maxHeight;
     private final double extraVariation;
-    private long seed = Long.MIN_VALUE;
-    private List<Island> islands = List.of();
 
     public IslandLayout(FileConfiguration config) {
         mainX = config.getInt("island.center-x", 0);
@@ -25,72 +61,238 @@ public final class IslandLayout {
         mainRadius = Math.max(16, config.getInt("island.radius", 100));
         mainHeight = Math.max(2, config.getInt("island.height", 9));
         mainVariation = Math.max(0.0D, config.getDouble("island.variation", 1.2D));
-        minCount = Math.max(10, config.getInt("additional-islands.count-min", 10));
-        maxCount = Math.max(minCount, config.getInt("additional-islands.count-max", 20));
-        minDistance = Math.max(mainRadius + 200, config.getInt("additional-islands.min-distance", 700));
-        maxDistance = Math.max(minDistance + 100, config.getInt("additional-islands.max-distance", 6000));
-        minRadius = Math.max(8, config.getInt("additional-islands.radius-min", 15));
-        maxRadius = Math.max(minRadius, config.getInt("additional-islands.radius-max", 24));
-        minHeight = Math.max(2, config.getInt("additional-islands.height-min", 3));
-        maxHeight = Math.max(minHeight, config.getInt("additional-islands.height-max", 5));
-        extraVariation = Math.max(0.0D, config.getDouble("additional-islands.variation", 0.7D));
+
+        enabled = config.getBoolean("additional-islands.enabled", true);
+        chancePercent = clampPercent(config.getInt("additional-islands.chance-percent", 72));
+        minDistance = Math.max(mainRadius + 80,
+                config.getInt("additional-islands.min-distance", 500));
+
+        int configuredCellSize = Math.max(256,
+                config.getInt("additional-islands.cell-size", 1100));
+        minRadius = Math.max(8,
+                config.getInt("additional-islands.radius-min", 15));
+        maxRadius = Math.max(minRadius,
+                config.getInt("additional-islands.radius-max", 24));
+        minHeight = Math.max(2,
+                config.getInt("additional-islands.height-min", 3));
+        maxHeight = Math.max(minHeight,
+                config.getInt("additional-islands.height-max", 5));
+        extraVariation = Math.max(0.0D,
+                config.getDouble("additional-islands.variation", 0.7D));
+
+        /*
+         * Один кандидат приходится только на одну ячейку.
+         * Зазор между ячейками специально делаем большим, чем min-distance,
+         * а случайное смещение ограничиваем, чтобы два соседних острова
+         * гарантированно не появлялись вплотную друг к другу.
+         */
+        long safeCellSize = Math.max(
+                configuredCellSize,
+                (long) minDistance * 2L + (long) maxRadius * 2L + 16L
+        );
+        cellSize = (int) Math.min(Integer.MAX_VALUE - 1024L, safeCellSize);
+
+        int maxJitter = Math.max(1, minDistance / 3);
+        jitter = Math.min(maxJitter, Math.max(1, cellSize / 5));
     }
 
-    public synchronized List<Island> get(long worldSeed) {
-        if (seed == worldSeed && !islands.isEmpty()) return islands;
-        List<Island> result = new ArrayList<>();
-        result.add(new Island(mainX, mainZ, mainRadius, mainHeight, mainVariation, true, "main"));
+    /** Главный остров остаётся единственным фиксированным островом в центре. */
+    public Island getMainIsland() {
+        return new Island(mainX, mainZ, mainRadius, mainHeight,
+                mainVariation, true, "main", Biome.PLAINS);
+    }
 
-        Random random = new Random(worldSeed ^ 0x5DEECE66DL);
-        int targetCount = minCount + random.nextInt(maxCount - minCount + 1);
-        String[] floraTypes = {"forest", "jungle", "birch", "taiga", "savanna", "flower", "swamp", "dark_forest", "mushroom"};
+    /**
+     * Возвращает только острова, которые могут пересекать текущий чанк.
+     * Никакого списка всех островов мира здесь нет.
+     */
+    public List<Island> getForChunk(long worldSeed, int chunkX, int chunkZ) {
+        int chunkMinX = chunkX * 16;
+        int chunkMinZ = chunkZ * 16;
+        int chunkMaxX = chunkMinX + 15;
+        int chunkMaxZ = chunkMinZ + 15;
 
-        for (int i = 0; i < targetCount; i++) {
-            Island candidate = null;
-            for (int attempt = 0; attempt < 1000; attempt++) {
-                double angle = random.nextDouble() * Math.PI * 2.0D;
-                double distance = minDistance + random.nextDouble() * (maxDistance - minDistance);
-                int x = mainX + (int) Math.round(Math.cos(angle) * distance);
-                int z = mainZ + (int) Math.round(Math.sin(angle) * distance);
-                int radius = minRadius + random.nextInt(maxRadius - minRadius + 1);
-                int height = minHeight + random.nextInt(maxHeight - minHeight + 1);
-                String flora = floraTypes[random.nextInt(floraTypes.length)];
-                Island test = new Island(x, z, radius, height, extraVariation, false, flora);
-                if (doesNotOverlap(result, test)) {
-                    candidate = test;
-                    break;
+        List<Island> result = new ArrayList<>(2);
+        Island main = getMainIsland();
+        if (intersectsChunk(main, chunkMinX, chunkMaxX, chunkMinZ, chunkMaxZ, true)) {
+            result.add(main);
+        }
+
+        if (!enabled || chancePercent <= 0) return result;
+
+        /*
+         * Остров с радиусом до maxRadius может находиться в соседней ячейке,
+         * поэтому берём небольшой запас с обеих сторон.
+         */
+        long minCellX = Math.floorDiv((long) chunkMinX - maxRadius - cellSize, (long) cellSize);
+        long maxCellX = Math.floorDiv((long) chunkMaxX + maxRadius + cellSize, (long) cellSize);
+        long minCellZ = Math.floorDiv((long) chunkMinZ - maxRadius - cellSize, (long) cellSize);
+        long maxCellZ = Math.floorDiv((long) chunkMaxZ + maxRadius + cellSize, (long) cellSize);
+
+        for (long cellX = minCellX; cellX <= maxCellX; cellX++) {
+            for (long cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
+                Island candidate = createCandidate(worldSeed, cellX, cellZ);
+                if (candidate == null) continue;
+                if (!intersectsChunk(candidate, chunkMinX, chunkMaxX, chunkMinZ, chunkMaxZ, false)) continue;
+                result.add(candidate);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Ищет биом/остров по мировым координатам.
+     * Используется генератором биомов, поэтому при загрузке чанка
+     * Minecraft всегда получает тот же остров и тот же биом.
+     */
+    public Island findIslandAt(long worldSeed, int x, int z) {
+        Island main = getMainIsland();
+        if (insideInfluence(main, x, z, true)) return main;
+
+        if (!enabled || chancePercent <= 0) return null;
+
+        long cellX = Math.floorDiv((long) x, (long) cellSize);
+        long cellZ = Math.floorDiv((long) z, (long) cellSize);
+
+        Island nearest = null;
+        double nearestDistance = Double.MAX_VALUE;
+
+        for (long cx = cellX - 1; cx <= cellX + 1; cx++) {
+            for (long cz = cellZ - 1; cz <= cellZ + 1; cz++) {
+                Island candidate = createCandidate(worldSeed, cx, cz);
+                if (candidate == null || !insideInfluence(candidate, x, z, false)) continue;
+
+                double dx = x - candidate.x();
+                double dz = z - candidate.z();
+                double distance = dx * dx + dz * dz;
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearest = candidate;
                 }
             }
-            if (candidate != null) result.add(candidate);
         }
 
-        // Не допускаем молча меньше 10 островов из-за редкой коллизии координат.
-        // На огромной области этого практически не требуется, но цикл гарантирует минимум.
-        int safety = 0;
-        while (result.size() - 1 < minCount && safety++ < 5000) {
-            double angle = random.nextDouble() * Math.PI * 2.0D;
-            double distance = minDistance + random.nextDouble() * (maxDistance - minDistance);
-            int x = mainX + (int) Math.round(Math.cos(angle) * distance);
-            int z = mainZ + (int) Math.round(Math.sin(angle) * distance);
-            int radius = minRadius + random.nextInt(maxRadius - minRadius + 1);
-            int height = minHeight + random.nextInt(maxHeight - minHeight + 1);
-            String flora = floraTypes[random.nextInt(floraTypes.length)];
-            Island test = new Island(x, z, radius, height, extraVariation, false, flora);
-            if (doesNotOverlap(result, test)) result.add(test);
-        }
-
-        seed = worldSeed;
-        islands = Collections.unmodifiableList(result);
-        return islands;
+        return nearest;
     }
 
-    private static boolean doesNotOverlap(List<Island> existing, Island candidate) {
-        for (Island other : existing) {
-            long dx = (long) candidate.x() - other.x();
-            long dz = (long) candidate.z() - other.z();
-            long min = (long) candidate.radius() + other.radius() + 300L;
-            if (dx * dx + dz * dz < min * min) return false;
+    /** Все биомы, которые реально может вернуть этот генератор. */
+    public List<Biome> getBiomes() {
+        List<Biome> biomes = new ArrayList<>(SMALL_BIOMES.length + 2);
+        biomes.add(Biome.WARM_OCEAN);
+        biomes.add(Biome.PLAINS);
+        for (BiomeDefinition definition : SMALL_BIOMES) {
+            if (!biomes.contains(definition.biome())) biomes.add(definition.biome());
         }
-        return true;
+        return List.copyOf(biomes);
+    }
+
+    /**
+     * Оставлен для совместимости с внешним кодом проекта.
+     * Новая генерация малых островов не использует глобальный список.
+     */
+    @Deprecated
+    public List<Island> get(long worldSeed) {
+        return List.of(getMainIsland());
+    }
+
+    private Island createCandidate(long worldSeed, long cellX, long cellZ) {
+        long seed = mixSeed(worldSeed, cellX, cellZ);
+
+        if (Math.floorMod(seed, 100) >= chancePercent) return null;
+
+        int offsetX = randomOffset(seed ^ 0x13579BDF2468ACE1L);
+        int offsetZ = randomOffset(seed ^ 0x2468ACE13579BDFL);
+
+        long centerX = cellX * (long) cellSize + cellSize / 2L + offsetX;
+        long centerZ = cellZ * (long) cellSize + cellSize / 2L + offsetZ;
+
+        if (centerX < Integer.MIN_VALUE || centerX > Integer.MAX_VALUE
+                || centerZ < Integer.MIN_VALUE || centerZ > Integer.MAX_VALUE) {
+            return null;
+        }
+
+        int radius = minRadius + boundedInt(seed ^ 0x55AA55AA55AA55AAL,
+                maxRadius - minRadius + 1);
+        int height = minHeight + boundedInt(seed ^ 0xAA55AA55AA55AA55L,
+                maxHeight - minHeight + 1);
+
+        int x = (int) centerX;
+        int z = (int) centerZ;
+
+        /*
+         * У главного острова есть отдельная буферная зона.
+         * Даже если ближайшая ячейка случайно дала координаты рядом,
+         * такой кандидат отбрасывается.
+         */
+        long dx = (long) x - mainX;
+        long dz = (long) z - mainZ;
+        long mainSafeDistance = (long) mainRadius + radius + minDistance;
+        if (dx * dx + dz * dz < mainSafeDistance * mainSafeDistance) return null;
+
+        int biomeIndex = Math.floorMod(
+                (int) Math.floorMod(cellX, SMALL_BIOMES.length)
+                        + 2 * (int) Math.floorMod(cellZ, SMALL_BIOMES.length)
+                        + (int) Math.floorMod(worldSeed ^ (worldSeed >>> 32), SMALL_BIOMES.length),
+                SMALL_BIOMES.length
+        );
+        BiomeDefinition biome = SMALL_BIOMES[biomeIndex];
+
+        return new Island(x, z, radius, height, extraVariation,
+                false, biome.flora(), biome.biome());
+    }
+
+    private boolean intersectsChunk(Island island, int minX, int maxX,
+                                    int minZ, int maxZ, boolean main) {
+        int influence = getSlopeRadius(island.radius(), main);
+        long closestX = clampLong(island.x(), minX, maxX);
+        long closestZ = clampLong(island.z(), minZ, maxZ);
+        long dx = (long) island.x() - closestX;
+        long dz = (long) island.z() - closestZ;
+        return dx * dx + dz * dz <= (long) influence * influence;
+    }
+
+    private boolean insideInfluence(Island island, int x, int z, boolean main) {
+        int influence = getSlopeRadius(island.radius(), main);
+        long dx = (long) x - island.x();
+        long dz = (long) z - island.z();
+        return dx * dx + dz * dz <= (long) influence * influence;
+    }
+
+    private int getSlopeRadius(int radius, boolean main) {
+        return radius + Math.max(14, radius / 3);
+    }
+
+    private int randomOffset(long seed) {
+        return (int) Math.floorMod(seed, (long) jitter * 2L + 1L) - jitter;
+    }
+
+    private static int boundedInt(long seed, int bound) {
+        if (bound <= 1) return 0;
+        return (int) Math.floorMod(mix(seed), bound);
+    }
+
+    private static long mixSeed(long worldSeed, long cellX, long cellZ) {
+        long value = worldSeed;
+        value ^= mix(cellX * 341873128712L);
+        value ^= mix(cellZ * 132897987541L);
+        value ^= 0x9E3779B97F4A7C15L;
+        return mix(value);
+    }
+
+    private static long mix(long value) {
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53L;
+        return value ^ (value >>> 33);
+    }
+
+    private static long clampLong(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(100, value));
     }
 }
