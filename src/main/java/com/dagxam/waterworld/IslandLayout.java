@@ -63,12 +63,12 @@ public final class IslandLayout {
         mainVariation = Math.max(0.0D, config.getDouble("island.variation", 1.2D));
 
         enabled = config.getBoolean("additional-islands.enabled", true);
-        chancePercent = clampPercent(config.getInt("additional-islands.chance-percent", 72));
+        chancePercent = clampPercent(config.getInt("additional-islands.chance-percent", 100));
         minDistance = Math.max(mainRadius + 80,
                 config.getInt("additional-islands.min-distance", 500));
 
         int configuredCellSize = Math.max(256,
-                config.getInt("additional-islands.cell-size", 1100));
+                config.getInt("additional-islands.cell-size", 650));
         minRadius = Math.max(8,
                 config.getInt("additional-islands.radius-min", 15));
         maxRadius = Math.max(minRadius,
@@ -81,19 +81,26 @@ public final class IslandLayout {
                 config.getDouble("additional-islands.variation", 0.7D));
 
         /*
-         * Один кандидат приходится только на одну ячейку.
-         * Зазор между ячейками специально делаем большим, чем min-distance,
-         * а случайное смещение ограничиваем, чтобы два соседних острова
-         * гарантированно не появлялись вплотную друг к другу.
+         * Один кандидат приходится на каждую пространственную ячейку
+         * (если chance-percent = 100).
+         *
+         * Раньше размер ячейки ошибочно рассчитывался примерно как
+         * 2 * min-distance, из-за чего реальные острова оказывались
+         * примерно через 1100 блоков и могли долго не встречаться.
+         *
+         * Теперь достаточно гарантировать:
+         * cellSize - 2 * jitter > minDistance.
+         * Это позволяет держать острова достаточно разнесёнными,
+         * но при этом сделать их заметно плотнее.
          */
+        int configuredJitter = Math.min(64, Math.max(1, minDistance / 8));
+        jitter = Math.min(configuredJitter, Math.max(1, configuredCellSize / 10));
+
         long safeCellSize = Math.max(
                 configuredCellSize,
-                (long) minDistance * 2L + (long) maxRadius * 2L + 16L
+                (long) minDistance + (long) jitter * 2L + 16L
         );
         cellSize = (int) Math.min(Integer.MAX_VALUE - 1024L, safeCellSize);
-
-        int maxJitter = Math.max(1, minDistance / 3);
-        jitter = Math.min(maxJitter, Math.max(1, cellSize / 5));
     }
 
     /** Главный остров остаётся единственным фиксированным островом в центре. */
@@ -124,10 +131,10 @@ public final class IslandLayout {
          * Остров с радиусом до maxRadius может находиться в соседней ячейке,
          * поэтому берём небольшой запас с обеих сторон.
          */
-        long minCellX = Math.floorDiv((long) chunkMinX - maxRadius - cellSize, (long) cellSize);
-        long maxCellX = Math.floorDiv((long) chunkMaxX + maxRadius + cellSize, (long) cellSize);
-        long minCellZ = Math.floorDiv((long) chunkMinZ - maxRadius - cellSize, (long) cellSize);
-        long maxCellZ = Math.floorDiv((long) chunkMaxZ + maxRadius + cellSize, (long) cellSize);
+        long minCellX = Math.floorDiv((long) chunkMinX - maxRadius - jitter, (long) cellSize);
+        long maxCellX = Math.floorDiv((long) chunkMaxX + maxRadius + jitter, (long) cellSize);
+        long minCellZ = Math.floorDiv((long) chunkMinZ - maxRadius - jitter, (long) cellSize);
+        long maxCellZ = Math.floorDiv((long) chunkMaxZ + maxRadius + jitter, (long) cellSize);
 
         for (long cellX = minCellX; cellX <= maxCellX; cellX++) {
             for (long cellZ = minCellZ; cellZ <= maxCellZ; cellZ++) {
